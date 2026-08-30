@@ -56,11 +56,23 @@ const FIXTURES = [
     move: b => ({ kind: 'EXIT', cubeId: 0, from: X(b, 4), to: OUT, jumps: 0, path: [X(b, 4)], jumped: [] })
   },
   {
-    name: 'RF-2: n1 innerhalb und frei -> STEP, keine Verkettung',
+    // Der Blocker bei x=3 ist wesentlich: ohne ihn waere die Bahn frei und R0 (Rutschen)
+    // wuerde greifen. Genau ein Feld vor rueckt der Wuerfel nur bei verstellter Bahn.
+    name: 'RF-2: n1 frei, Bahn danach verstellt -> STEP, keine Verkettung',
+    board: B5,
+    cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 3), dir: PX }],
+    tap: b => X(b, 0),
+    move: b => ({ kind: 'STEP', cubeId: 0, from: X(b, 0), to: X(b, 1), jumps: 0, path: [X(b, 0), X(b, 1)], jumped: [] })
+  },
+  {
+    name: 'RF-2b: Bahn bis zum Rand frei -> EXIT durch Rutschen, jumps 0',
     board: B5,
     cubes: b => [{ cell: X(b, 0), dir: PX }],
     tap: b => X(b, 0),
-    move: b => ({ kind: 'STEP', cubeId: 0, from: X(b, 0), to: X(b, 1), jumps: 0, path: [X(b, 0), X(b, 1)], jumped: [] })
+    move: b => ({
+      kind: 'EXIT', cubeId: 0, from: X(b, 0), to: OUT, jumps: 0,
+      path: [X(b, 0), X(b, 1), X(b, 2), X(b, 3), X(b, 4)], jumped: []
+    })
   },
   {
     name: 'RF-3: n1 besetzt, n2 ausserhalb -> EXIT (Sprung ueber den Rand hinaus)',
@@ -145,7 +157,7 @@ test('RF-Fixtures aus §1.3 liefern exakt den spezifizierten Move', () => {
 });
 
 test('RF-3 ist normativ: Sprung ueber den letzten Blocker ins Freie (Teil von RULE_VERSION)', () => {
-  assert.equal(RULE_VERSION, 1);
+  assert.equal(RULE_VERSION, 2);
   const b = B5;
   const state = createState(b, [{ cell: X(b, 3), dir: PX }, { cell: X(b, 4), dir: PX }], 'ABBAU');
   const m = resolveMove(b, state, X(b, 3));
@@ -389,7 +401,16 @@ test('Zusatz 7: path und jumped sind strukturell korrekt', () => {
         assert.equal(state.occ[m.to], EMPTY);
       } else {
         assert.equal(m.to, OUT);
-        assert.equal(m.path.length, Math.max(1, m.jumps));
+        if (m.jumps === 0) {
+          // Rutschen (R0): path nennt die durchlaufenen Zellen, Startzelle eingeschlossen.
+          // Steht der Stein schon am Rand (RF-1), ist die Bahn nur die Startzelle.
+          assert.ok(m.path.length >= 1, 'Rutschbahn nennt mindestens die Startzelle');
+          for (let k = 0; k + 1 < m.path.length; k++)
+            assert.equal(b.step[m.path[k] * 6 + d], m.path[k + 1], 'Rutschbahn liegt auf dem Strahl');
+          assert.equal(b.step[m.path[m.path.length - 1] * 6 + d], OUT, 'Rutschbahn endet am Rand');
+        } else {
+          assert.equal(m.path.length, Math.max(1, m.jumps));
+        }
       }
 
       // Der Zug laeuft auf dem Strahl: jumped[k] liegt zwischen path[k] und path[k+1].
@@ -397,7 +418,9 @@ test('Zusatz 7: path und jumped sind strukturell korrekt', () => {
         assert.equal(m.jumped[k], b.step[m.path[k] * 6 + d], 'jumped nicht auf dem Strahl');
         assert.notEqual(state.occ[m.jumped[k]], EMPTY, 'jumped-Zelle war nicht besetzt');
       }
-      if (m.kind !== 'STEP')
+      // Beim Sprung liegt zwischen zwei path-Stationen genau ein uebersprungener Traeger.
+      // Beim Rutschen (EXIT mit jumps 0) gibt es keine Traeger; die Bahn ist oben geprueft.
+      if (m.kind === 'JUMP' || (m.kind === 'EXIT' && m.jumps > 0))
         for (let k = 0; k + 1 < m.path.length; k++)
           assert.equal(m.path[k + 1], b.step[m.jumped[k] * 6 + d], 'path nicht auf dem Strahl');
       for (let k = 1; k < m.path.length; k++)

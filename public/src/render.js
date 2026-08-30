@@ -1135,8 +1135,39 @@ export function createTowerView(ctx) {
     return cube.target ? mats.target : mats.base;
   }
 
+  /**
+   * Ein 2x1-Stein ist eine Gruppe aus zwei Teilwuerfeln. Alle Zugriffe, die ein Mesh
+   * brauchen (Material, Schatten, Auswahlebene), laufen ueber cube.parts; alles, was
+   * den Stein als Ganzes bewegt, ueber cube.mesh.
+   */
   function refresh(cube) {
-    cube.mesh.material = materialFor(cube);
+    const m = materialFor(cube);
+    for (let k = 0; k < cube.parts.length; k++) cube.parts[k].material = m;
+  }
+
+  /** Weltposition des Steinmittelpunkts, wenn sein Anker auf `cell` steht. */
+  function setzePosition(cube, cell) {
+    cube.mesh.position.copy(worldOf(cell)).add(cube.offset);
+  }
+
+  /** Alle Zellen, die der Stein belegt, wenn sein Anker auf `cell` steht. */
+  function zellenAb(cube, cell) {
+    if (cell === OUT || cube.ext === undefined) return [cell];
+    const zweite = board.step[cell * 6 + cube.ext];
+    return zweite === OUT ? [cell] : [cell, zweite];
+  }
+
+  function belegeZellen(cube, cell) {
+    const z = zellenAb(cube, cell);
+    for (let k = 0; k < z.length; k++) if (z[k] !== OUT) byCell.set(z[k], cube.id);
+    for (let k = 0; k < cube.parts.length; k++)
+      cube.parts[k].userData.cell = z[Math.min(k, z.length - 1)];
+  }
+
+  function raeumeZellen(cube, cell) {
+    const z = zellenAb(cube, cell);
+    for (let k = 0; k < z.length; k++)
+      if (z[k] !== OUT && byCell.get(z[k]) === cube.id) byCell.delete(z[k]);
   }
 
   function variantFor(dirKey, row) {
@@ -1171,8 +1202,10 @@ export function createTowerView(ctx) {
   function applyVisibility(cube) {
     const hide = cube.hidden;
     cube.mesh.visible = !hide && cube.alive;
-    if (hide || !cube.alive) cube.mesh.layers.disable(LAYER_PICK);
-    else cube.mesh.layers.enable(LAYER_PICK);
+    for (let k = 0; k < cube.parts.length; k++) {
+      if (hide || !cube.alive) cube.parts[k].layers.disable(LAYER_PICK);
+      else cube.parts[k].layers.enable(LAYER_PICK);
+    }
   }
 
   // --- Aufbau ------------------------------------------------------------
@@ -1195,25 +1228,66 @@ export function createTowerView(ctx) {
       const dv = dirVectorOf(spec.cell, spec.dir);
       const dirKey = dirKeyOf([dv.x, dv.y, dv.z]);
       const row = spec.target ? ROW.TARGET : ROW.NORMAL;
-      const mesh = new THREE.Mesh(variantFor(dirKey, row), mats.base);
-      const p = worldOf(spec.cell);
-      mesh.position.copy(p);
-      mesh.matrixAutoUpdate = false;
-      mesh.updateMatrix();
-      mesh.castShadow = mats.shadows;
-      mesh.receiveShadow = mats.shadows;
-      mesh.layers.enable(LAYER_PICK);
-      mesh.userData.cell = spec.cell;
-      mesh.userData.cubeId = id;
+      const geo = variantFor(dirKey, row);
+      const zweite = spec.ext === undefined ? OUT : board.step[spec.cell * 6 + spec.ext];
+
+      /** @type {THREE.Object3D} */
+      let traeger;
+      /** @type {THREE.Mesh[]} */
+      const parts = [];
+      const offset = new THREE.Vector3(0, 0, 0);
+
+      if (zweite === OUT) {
+        const mesh = new THREE.Mesh(geo, mats.base);
+        traeger = mesh;
+        parts.push(mesh);
+      } else {
+        // Zwei Teilwuerfel in einer Gruppe. Sie werden entlang der Auslegerachse leicht
+        // gestreckt und aufeinander zu geschoben, damit die Fuge verschwindet und der
+        // Stein als EIN laenglicher Klotz gelesen wird - mit einem Pfeil je Zelle.
+        const ev = dirVectorOf(spec.cell, spec.ext).normalize();
+        offset.copy(ev).multiplyScalar(CELL * 0.5);
+        const halb = (CELL + CUBE_EDGE) * 0.5;      // Laenge einer Haelfte
+        const streck = halb / CUBE_EDGE;
+        const skala = new THREE.Vector3(
+          1 + (streck - 1) * Math.abs(ev.x),
+          1 + (streck - 1) * Math.abs(ev.y),
+          1 + (streck - 1) * Math.abs(ev.z));
+
+        traeger = new THREE.Group();
+        for (const seite of [-1, 1]) {
+          const teil = new THREE.Mesh(geo, mats.base);
+          teil.position.copy(ev).multiplyScalar(seite * halb * 0.5);
+          teil.scale.copy(skala);
+          teil.matrixAutoUpdate = false;
+          teil.updateMatrix();
+          traeger.add(teil);
+          parts.push(teil);
+        }
+      }
+
+      traeger.position.copy(worldOf(spec.cell)).add(offset);
+      traeger.matrixAutoUpdate = false;
+      traeger.updateMatrix();
+      traeger.userData.cubeId = id;
+      for (const teil of parts) {
+        teil.castShadow = mats.shadows;
+        teil.receiveShadow = mats.shadows;
+        teil.layers.enable(LAYER_PICK);
+        teil.userData.cubeId = id;
+        teil.userData.cell = spec.cell;
+      }
+
       /** @type {CubeRef} */
       const cube = {
         id, cell: spec.cell, dir: spec.dir, dirKey, target: !!spec.target,
+        ext: spec.ext, parts, offset,
         alive: true, busy: false, hovered: false, ghosted: false, hidden: false,
-        flashing: false, mesh, fadeMat: null
+        flashing: false, mesh: traeger, fadeMat: null
       };
       cubes.push(cube);
-      byCell.set(spec.cell, id);
-      towerGroup.add(mesh);
+      belegeZellen(cube, spec.cell);
+      towerGroup.add(traeger);
       refresh(cube);
       aliveCount++;
     }
@@ -1390,7 +1464,7 @@ export function createTowerView(ctx) {
 
   function detachToFlying(cube) {
     if (cube.mesh.parent) cube.mesh.parent.remove(cube.mesh);
-    cube.mesh.layers.disable(LAYER_PICK);
+    for (let k = 0; k < cube.parts.length; k++) cube.parts[k].layers.disable(LAYER_PICK);
     cube.mesh.matrixAutoUpdate = false;
     flyingGroup.add(cube.mesh);
   }
@@ -1399,21 +1473,22 @@ export function createTowerView(ctx) {
   function commitMove(move) {
     const cube = get(move.cubeId);
     if (!cube) return;
-    if (byCell.get(move.from) === cube.id) byCell.delete(move.from);
+    raeumeZellen(cube, move.from);
     cube.mesh.quaternion.identity();
     cube.mesh.scale.setScalar(1);
     if (move.to === OUT) {
       cube.alive = false;
       cube.cell = OUT;
-      cube.mesh.userData.cell = OUT;
+      for (let k = 0; k < cube.parts.length; k++) {
+        cube.parts[k].userData.cell = OUT;
+        cube.parts[k].layers.disable(LAYER_PICK);
+      }
       if (cube.mesh.parent) cube.mesh.parent.remove(cube.mesh);
-      cube.mesh.layers.disable(LAYER_PICK);
       aliveCount = Math.max(0, aliveCount - 1);
     } else {
       cube.cell = move.to;
-      cube.mesh.userData.cell = move.to;
-      cube.mesh.position.copy(worldOf(move.to));
-      byCell.set(move.to, cube.id);
+      setzePosition(cube, move.to);
+      belegeZellen(cube, move.to);
       if (cube.mesh.parent !== towerGroup) towerGroup.add(cube.mesh);
       // Schale kann sich geaendert haben: Roentgen und Schichtenregler nachziehen.
       cube.hidden = board.mode === 'VOLUMEN' && peel > 0 && shellOf(move.to) < peel;
@@ -1445,10 +1520,9 @@ export function createTowerView(ctx) {
         const cell = state.cellOf[cube.id];
         cube.alive = true;
         cube.cell = cell;
-        cube.mesh.userData.cell = cell;
-        cube.mesh.position.copy(worldOf(cell));
+        setzePosition(cube, cell);
         if (cube.mesh.parent !== towerGroup) towerGroup.add(cube.mesh);
-        byCell.set(cell, cube.id);
+        belegeZellen(cube, cell);
         aliveCount++;
         cube.hidden = board.mode === 'VOLUMEN' && peel > 0 && shellOf(cell) < peel;
         const outer = board.mode === 'FASSADE' ? true : shellOf(cell) === 0;
@@ -1456,7 +1530,7 @@ export function createTowerView(ctx) {
       } else {
         cube.alive = false;
         cube.cell = OUT;
-        cube.mesh.userData.cell = OUT;
+        for (let k = 0; k < cube.parts.length; k++) cube.parts[k].userData.cell = OUT;
         cube.hidden = false;
         cube.ghosted = false;
         if (cube.mesh.parent) cube.mesh.parent.remove(cube.mesh);
@@ -1480,8 +1554,10 @@ export function createTowerView(ctx) {
     mats = buildMaterialSet(skin, atlas);
     for (const cube of cubes) {
       if (cube.fadeMat) releaseFade(cube);
-      cube.mesh.castShadow = mats.shadows;
-      cube.mesh.receiveShadow = mats.shadows;
+      for (let k = 0; k < cube.parts.length; k++) {
+        cube.parts[k].castShadow = mats.shadows;
+        cube.parts[k].receiveShadow = mats.shadows;
+      }
       refresh(cube);
     }
     if (coreBox) {
@@ -1565,10 +1641,15 @@ export function buildTweens(view, board, move, skin) {
   const mo = motionOf(skin);
   cube.busy = true;
 
+  // Ein 2x1-Stein sitzt mit seinem Mittelpunkt zwischen den beiden Zellen; alle
+  // Zielpositionen der Animation muessen diesen Versatz mitfuehren.
+  const versatz = cube.offset || new THREE.Vector3(0, 0, 0);
+  const pos = (cell) => view.worldOf(cell).add(versatz);
+
   // --- Ungueltig: Wackeln entlang der Pfeilrichtung + rotes Aufblitzen ---
   if (move.kind === 'INVALID') {
     const d = view.dirVectorOf(move.from, cube.dir).normalize();
-    const base = view.worldOf(move.from);
+    const base = pos(move.from);
     const amp = mo.wobble.amp * CELL;
     const cycles = mo.wobble.cycles;
     const ease = easeOf(mo.wobble.ease);
@@ -1591,8 +1672,8 @@ export function buildTweens(view, board, move, skin) {
 
   // --- Schritt -----------------------------------------------------------
   if (move.kind === 'STEP') {
-    const from = view.worldOf(move.from);
-    const to = view.worldOf(move.to);
+    const from = pos(move.from);
+    const to = pos(move.to);
     items.push(new Tween(mo.step.dur, easeOf(mo.step.ease), (e) => {
       mesh.position.lerpVectors(from, to, e);
       mesh.updateMatrix();
@@ -1601,13 +1682,17 @@ export function buildTweens(view, board, move, skin) {
   }
 
   // --- Sprungglieder (JUMP und der Gitteranteil von EXIT) ---------------
-  const path = move.path || [move.from];
+  // Beim Rutschen (EXIT ohne Sprung) gibt es keine Zwischenstationen zu huepfen:
+  // der Stein setzt sich in Bewegung und verlaesst den Turm in einem Zug.
+  const path = (move.kind === 'EXIT' && move.jumps === 0)
+    ? [move.from]
+    : (move.path || [move.from]);
   const tiltAxis = new THREE.Vector3();
   const q = new THREE.Quaternion();
   for (let i = 0; i + 1 < path.length; i++) {
     if (i > 0) items.push(mo.chain.delay);
-    const a = view.worldOf(path[i]);
-    const b = view.worldOf(path[i + 1]);
+    const a = pos(path[i]);
+    const b = pos(path[i + 1]);
     const d = view.dirVectorOf(path[i], cube.dir).normalize();
     const axis = arcAxis(a, d, view.center);
     tiltAxis.copy(d).cross(axis);
@@ -1633,7 +1718,7 @@ export function buildTweens(view, board, move, skin) {
 
   // --- Austritt: Wegfliegen ----------------------------------------------
   const lastCell = path.length ? path[path.length - 1] : move.from;
-  const start = view.worldOf(lastCell);
+  const start = pos(lastCell);
   const dOut = view.dirVectorOf(lastCell, cube.dir).normalize();
   const span = Math.max(board.W, board.H, board.D) * CELL;
   const end = start.clone().addScaledVector(dOut, span * 1.2 + 4 * CELL);

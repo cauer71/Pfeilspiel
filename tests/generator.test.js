@@ -81,7 +81,9 @@ test('N2 Ketten-Unterschuss: die Kette stoppt vor dem geplanten Ziel', () => {
 
 test('N3 Schritt statt Sprung: A+d ist frei, die Regel liefert STEP', () => {
   const b = vol(5, 2, 3);
-  const st = zustand(b, [{ cell: X(b, 2), dir: PX }]);   // cubeId 0 = q
+  // Der Blocker bei x=4 ist ab RULE_VERSION 2 noetig: ohne ihn waere die Bahn frei und
+  // die Regel lieferte einen Austritt durch Rutschen (R0) statt eines Schrittes.
+  const st = zustand(b, [{ cell: X(b, 2), dir: PX }, { cell: X(b, 4), dir: PX }]);
   const pr = pruefeUnRelocate(b, st, 0, X(b, 0), X(b, 2), 4);
   assert.equal(pr.move.kind, 'STEP');
   assert.equal(pr.move.to, X(b, 1));
@@ -89,34 +91,43 @@ test('N3 Schritt statt Sprung: A+d ist frei, die Regel liefert STEP', () => {
 });
 
 test('N4 Feste Pfeile: unRelocate benutzt die BESTEHENDE Richtung des Wuerfels', () => {
-  const b = vol(5, 3, 3);
+  const b = vol(5, 5, 3);
   const bZelle = V(b, 2, 1, 0);
   const aZelle = V(b, 1, 1, 0);
+  // Zwei ruhende Blocker halten beide Bahnen verstellt; ab RULE_VERSION 2 wuerde die
+  // Regel sonst rutschen lassen statt einen Schritt zu liefern.
+  const blockerOben = { cell: V(b, 1, 3, 0), dir: PY };
+  const blockerRechts = { cell: V(b, 4, 1, 0), dir: PX };
+
   // q zeigt nach oben (PY). Der naive Kandidat entlang der X-Achse setzt stillschweigend
   // eine frei gewaehlte Richtung voraus und ist deshalb zu verwerfen.
-  const stPY = zustand(b, [{ cell: bZelle, dir: PY }]);
+  const stPY = zustand(b, [{ cell: bZelle, dir: PY }, blockerOben, blockerRechts]);
   const prPY = pruefeUnRelocate(b, stPY, 0, aZelle, bZelle, 4);
   assert.equal(prPY.move.kind, 'STEP');
   assert.equal(prPY.move.to, V(b, 1, 2, 0), 'der Wuerfel zieht nach oben, nicht nach B');
   assert.equal(prPY.ok, false);
 
   // Gegenprobe: mit frei gewaehlter Richtung PX waere derselbe Kandidat akzeptiert worden.
-  const stPX = zustand(b, [{ cell: bZelle, dir: PX }]);
+  const stPX = zustand(b, [{ cell: bZelle, dir: PX }, blockerOben, blockerRechts]);
   const prPX = pruefeUnRelocate(b, stPX, 0, aZelle, bZelle, 4);
   assert.equal(prPX.ok, true);
   assert.equal(prPX.move.to, bZelle);
 });
 
 test('N5 Zustandsdrift: geprueft wird der Zustand zur Zugzeit, nicht der Endzustand', () => {
+  // Ab RULE_VERSION 2 macht ein duennerer Zustand einen Austritt eher moeglich, nicht
+  // seltener. Der Nachweis der Zustandsdrift laeuft deshalb ueber die Sprungkette: sie
+  // traegt den Wuerfel nur dann hinaus, wenn der zweite Traeger schon steht.
   const b = vol(5, 2, 3);
-  const duenn = emptyState(b, b.C, 'ABBAU');                       // X4 noch frei
-  const prDuenn = pruefeUnExit(b, duenn, X(b, 3), PX, 4);
-  assert.equal(prDuenn.move.kind, 'STEP', 'im Zustand zur Zugzeit nur ein Schritt');
+  const duenn = zustand(b, [{ cell: X(b, 2), dir: PX }]);          // nur ein Traeger
+  const prDuenn = pruefeUnExit(b, duenn, X(b, 1), PX, 4);
+  assert.equal(prDuenn.move.kind, 'JUMP', 'im Zustand zur Zugzeit endet die Kette im Gitter');
   assert.equal(prDuenn.ok, false);
 
-  const dicht = zustand(b, [{ cell: X(b, 4), dir: PX }]);          // spaeterer Endzustand
-  const prDicht = pruefeUnExit(b, dicht, X(b, 3), PX, 4);
+  const dicht = zustand(b, [{ cell: X(b, 2), dir: PX }, { cell: X(b, 4), dir: PX }]);
+  const prDicht = pruefeUnExit(b, dicht, X(b, 1), PX, 4);
   assert.equal(prDicht.move.kind, 'EXIT');
+  assert.equal(prDicht.move.jumps, 2);
   assert.equal(prDicht.ok, true, 'gegen den Endzustand geprueft saehe der Kandidat gut aus');
 });
 
@@ -161,17 +172,25 @@ function handLevel(b, cubes, witness) {
 }
 
 test('2. Prepend-Semantik: ref.push statt ref.unshift wird von verifyLevel abgelehnt', () => {
-  const b = vol(3, 2, 3);
-  const cubes = [{ cell: X(b, 1), dir: PX, target: false }, { cell: X(b, 2), dir: PX, target: false }];
-  // Rueckwaertsbau: erst X2 (tritt sofort aus), dann X1 (springt ueber X2 hinaus).
-  // unshift ergibt [X1, X2] — genau die Umkehrung der Erzeugungsreihenfolge.
-  const richtig = handLevel(b, cubes, [X(b, 1), X(b, 2)]);
+  // Drei Wuerfel in einer Reihe, alle nach +X: der hinterste ist anfangs eingeklemmt
+  // (n1 und n2 besetzt) und wird erst frei, wenn die beiden vor ihm gegangen sind.
+  // Ab RULE_VERSION 2 ist das der Fall, an dem sich die Reihenfolge noch entscheidet:
+  // ein Austritt macht andere Wuerfel nie schlechter, wohl aber ein zu frueher Tipp.
+  const b = vol(4, 2, 3);
+  const cubes = [
+    { cell: X(b, 0), dir: PX, target: false },
+    { cell: X(b, 1), dir: PX, target: false },
+    { cell: X(b, 2), dir: PX, target: false }
+  ];
+  const richtig = handLevel(b, cubes, [X(b, 2), X(b, 1), X(b, 0)]);
   assert.equal(verifyLevel(richtig).ok, true);
 
-  const falsch = handLevel(b, cubes, [X(b, 2), X(b, 1)]);   // push-Reihenfolge
+  const falsch = handLevel(b, cubes, [X(b, 0), X(b, 1), X(b, 2)]);   // push-Reihenfolge
   const ver = verifyLevel(falsch);
   assert.equal(ver.ok, false);
-  assert.equal(ver.reason, 'unsolved');
+  // Der zu fruehe Tipp trifft einen eingeklemmten Wuerfel: die Verifikation bricht
+  // schon beim ersten Zug ab, statt erst am Ende einen Rest festzustellen.
+  assert.equal(ver.reason, 'invalid@0');
 
   // Dasselbe an echten Generatorleveln: die umgedrehte Referenz faellt durch.
   for (const n of [2, 5, 14, 24]) {
@@ -247,8 +266,16 @@ test('4. Kennzahlen: maxChain, Dichte, restloser Abbau, Befreiungspraefix', () =
         const soll = parseLevelCode(level.levelCode);
         assert.ok(level.metrics.maxChain <= soll.maxChain, `${mode}/${goal}/${i}: maxChain`);
 
-        const dichte = level.cubes.length / board.C;
+        // Dichte = Anteil belegter ZELLEN. Ein 2x1-Stein belegt zwei; die Steinzahl
+        // allein waere von der Steinform abhaengig (SPEC §3.5).
+        const zustandDichte = createState(board, level.cubes, goal);
+        let belegt = 0;
+        for (let c = 0; c < board.C; c++) if (zustandDichte.occ[c] !== -1) belegt++;
+        const dichte = belegt / board.C;
         assert.ok(dichte >= soll.density - 0.02, `${mode}/${goal}/${i}: Dichte ${dichte}`);
+        // metrics.density wird gerundet ausgeliefert (SPEC §3.5), deshalb mit Toleranz.
+        assert.ok(Math.abs(level.metrics.density - dichte) < 0.005,
+          `${mode}/${goal}/${i}: metrics.density ${level.metrics.density} vs ${dichte}`);
 
         // Kein Referenzzug ueberschreitet maxChain der Spec.
         const state = createState(board, level.cubes, goal);
@@ -281,11 +308,15 @@ test('5. erzwungene Sackgasse: Fuellrueckfall greift und liefert ein verifiziert
   // Fuellrueckfall aus SPEC §6.5 erreichbar.
   const level = generateLevel({
     seed: 4242, attempt: 0, mode: 'VOLUMEN', goal: 'ABBAU',
-    W: 5, H: 5, D: 5, density: 1.0, maxChain: 1
+    W: 5, H: 5, D: 5, density: 1.0, maxChain: 1, dominoRate: 0
   });
   const board = buildBoard({ mode: 'VOLUMEN', W: 5, H: 5, D: 5 });
   assert.equal(level.cubes.length, board.C, 'das Gitter ist vollstaendig gefuellt');
-  assert.ok(level.par > level.cubes.length, 'mindestens ein Wuerfel braucht mehrere Tipps');
+  // Ab RULE_VERSION 2 raeumt der Fuellrueckfall seinen Korridor in EINEM Rutschzug ab,
+  // statt Feld fuer Feld zu schreiten; par ist deshalb nicht mehr groesser als die
+  // Wuerfelzahl. Gepruefte Aussage bleibt: das volle Gitter ist nur ueber den
+  // Fuellrueckfall erreichbar und der so erzeugte Zeuge loest es restlos auf.
+  assert.ok(level.par >= level.cubes.length, 'jeder Wuerfel braucht mindestens einen Tipp');
   assert.equal(verifyLevel(level).ok, true);
 
   const state = createState(board, level.cubes, 'ABBAU');
@@ -337,7 +368,7 @@ test('6. parseLevelCode(encodeLevelCode(spec)) ist die Identitaet', () => {
   assert.equal(encodeLevelCode({ mode: 'FASSADE', goal: 'ABBAU', W: 4, H: 5, D: 4, attempt: 0, seed: 0x0008FA3C }),
     'F-A-4x5x4-0-0008FA3C');
   assert.equal(encodeHash({ mode: 'FASSADE', goal: 'ABBAU', W: 5, H: 7, D: 5, attempt: 0, seed: 0x8fa3c }),
-    '#s=8fa3c&m=FASSADE&g=ABBAU&d=5x7x5&a=0&r=1&gv=1');
+    '#s=8fa3c&m=FASSADE&g=ABBAU&d=5x7x5&a=0&r=2&gv=2');
 
   assert.throws(() => parseLevelCode('X-A-4x5x4-0-0008FA3C'), Error);
   assert.throws(() => parseLevelCode('F-A-4x5x4-12-0008FA3C'), Error);
@@ -453,5 +484,5 @@ test('10. generateLevel liefert nur verifizierte Level aus', () => {
 test('10b. OUT und EMPTY bleiben die vereinbarten Sentinelwerte', () => {
   assert.equal(OUT, -1);
   assert.equal(EMPTY, -1);
-  assert.equal(GEN_VERSION, 1);
+  assert.equal(GEN_VERSION, 2);
 });

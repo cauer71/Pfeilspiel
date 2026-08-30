@@ -61,7 +61,12 @@ test('Fuzz: verifyLevel().ok ist in allen Faellen true', { timeout: 600000 }, ()
             p = { dichte: [], parProN: [], chainShare: [], maxChain: 0, soll: soll.density, kette: soll.maxChain };
             protokoll.set(schluessel, p);
           }
-          p.dichte.push(level.cubes.length / board.C);
+          // Fuellgrad = Anteil belegter ZELLEN (ein 2x1-Stein belegt zwei), nicht
+          // Steine je Zelle (SPEC §3.5).
+          const zst = createState(board, level.cubes, goal);
+          let belegt = 0;
+          for (let c = 0; c < board.C; c++) if (zst.occ[c] !== -1) belegt++;
+          p.dichte.push(belegt / board.C);
           p.parProN.push(level.par / level.cubes.length);
           p.chainShare.push(level.metrics.chainShare);
           if (level.metrics.maxChain > p.maxChain) p.maxChain = level.metrics.maxChain;
@@ -120,11 +125,36 @@ test('Mutationstest: fuenf Verfaelschungen werden abgelehnt', () => {
   m2.cubes[k].dir = dirs[0];
   assert.equal(verifyLevel(m2).ok, false, 'geaenderte Richtung');
 
-  // 3. witness-Eintrag getauscht
+  // 3. witness-Eintrag fehlt.
+  //
+  // Ab RULE_VERSION 2 ist ein blosser TAUSCH zweier Eintraege keine zuverlaessige
+  // Verfaelschung mehr: ein Austritt macht die Lage der uebrigen Steine nie schlechter
+  // (er raeumt nur Zellen), ein spaeterer Tipp bleibt also meist gueltig. Was in ABBAU
+  // dagegen immer auffaellt, ist ein FEHLENDER Tipp — dann bleibt mindestens ein Stein
+  // stehen und isSolved schlaegt fehl.
   const m3 = klon(abbau);
-  const letzte = m3.witness.length - 1;
-  const t = m3.witness[0]; m3.witness[0] = m3.witness[letzte]; m3.witness[letzte] = t;
-  assert.equal(verifyLevel(m3).ok, false, 'getauschter witness-Eintrag');
+  m3.witness = m3.witness.slice(1);
+  m3.par = m3.witness.length;
+  const v3 = verifyLevel(m3);
+  assert.equal(v3.ok, false, 'fehlender witness-Eintrag');
+  assert.equal(v3.reason, 'unsolved');
+
+  // 3b. witness-Eintrag zeigt auf eine im Startzustand leere Zelle.
+  const board3 = buildBoard({ mode: abbau.mode, ...abbau.dims });
+  const belegt = new Set();
+  for (const cu of abbau.cubes) {
+    belegt.add(cu.cell);
+    if (cu.ext !== undefined) belegt.add(board3.step[cu.cell * 6 + cu.ext]);
+  }
+  let leer = -1;
+  for (let c = 0; c < board3.C && leer < 0; c++) if (!belegt.has(c)) leer = c;
+  if (leer >= 0) {
+    const m3b = klon(abbau);
+    m3b.witness[0] = leer;
+    const v3b = verifyLevel(m3b);
+    assert.equal(v3b.ok, false, 'witness zeigt auf eine leere Zelle');
+    assert.equal(v3b.reason, 'invalid@0');
+  }
 
   // 4. par verfaelscht
   const m4 = klon(abbau);
@@ -184,21 +214,26 @@ test('Regressionsfixtures N1 bis N6: der Kandidatentest verwirft jeden naiven Ka
   assert.equal(r2.ok, false);
   assert.equal(r2.move.to, X(2));
 
-  // N3 Schritt statt Sprung.
-  const n3 = st([{ cell: X(2), dir: PX }]);
+  // N3 Schritt statt Sprung. Der Blocker bei X4 haelt die Bahn auf; ohne ihn wuerde ab
+  // RULE_VERSION 2 gerutscht (R0) statt geschritten.
+  const n3 = st([{ cell: X(2), dir: PX }, { cell: X(4), dir: PX }]);
   const r3 = pruefeUnRelocate(b, n3, 0, X(0), X(2), 4);
   assert.equal(r3.ok, false);
   assert.equal(r3.move.kind, 'STEP');
 
   // N4 Feste Pfeile: die Richtung des Wuerfels wird nie neu gewaehlt.
-  const b4 = buildBoard({ mode: 'VOLUMEN', W: 5, H: 3, D: 3 });
+  const b4 = buildBoard({ mode: 'VOLUMEN', W: 5, H: 5, D: 3 });
   const nach = V(b4, 2, 1, 0), von = V(b4, 1, 1, 0);
-  assert.equal(pruefeUnRelocate(b4, createState(b4, [{ cell: nach, dir: PY }], 'ABBAU'), 0, von, nach, 4).ok, false);
-  assert.equal(pruefeUnRelocate(b4, createState(b4, [{ cell: nach, dir: PX }], 'ABBAU'), 0, von, nach, 4).ok, true);
+  // Zwei ruhende Blocker halten beide Bahnen verstellt (siehe N3).
+  const riegel = [{ cell: V(b4, 1, 3, 0), dir: PY }, { cell: V(b4, 4, 1, 0), dir: PX }];
+  assert.equal(pruefeUnRelocate(b4, createState(b4, [{ cell: nach, dir: PY }].concat(riegel), 'ABBAU'), 0, von, nach, 4).ok, false);
+  assert.equal(pruefeUnRelocate(b4, createState(b4, [{ cell: nach, dir: PX }].concat(riegel), 'ABBAU'), 0, von, nach, 4).ok, true);
 
-  // N5 Zustandsdrift: im Zustand zur Zugzeit nur ein Schritt, im Endzustand ein Austritt.
-  assert.equal(pruefeUnExit(b, emptyState(b, b.C, 'ABBAU'), X(3), PX, 4).ok, false);
-  assert.equal(pruefeUnExit(b, st([{ cell: X(4), dir: PX }]), X(3), PX, 4).ok, true);
+  // N5 Zustandsdrift: ab RULE_VERSION 2 macht ein duennerer Zustand den Austritt eher
+  // moeglich. Der Nachweis laeuft deshalb ueber die Kette: sie traegt den Wuerfel nur
+  // hinaus, wenn der zweite Traeger schon steht.
+  assert.equal(pruefeUnExit(b, st([{ cell: X(2), dir: PX }]), X(1), PX, 4).ok, false);
+  assert.equal(pruefeUnExit(b, st([{ cell: X(2), dir: PX }, { cell: X(4), dir: PX }]), X(1), PX, 4).ok, true);
 
   // N6 Austritts-Umkehr: derselbe Wuerfel tritt im dichteren Zustand nicht mehr aus.
   assert.equal(pruefeUnExit(b, st([{ cell: X(2), dir: PX }, { cell: X(4), dir: PX }]), X(1), PX, 4).ok, true);

@@ -14,14 +14,19 @@
 // (ein Schrittfeld wird belegt, eine Kette schiesst ueber).
 
 import {
-  OUT, EMPTY, MAX_CUBES, RULE_VERSION,
+  OUT, EMPTY, MAX_CUBES, RULE_VERSION, EXT_NONE,
   buildBoard, validDirs, bestExitDirs,
   emptyState, createState, cloneState, addCube, dropCube,
   resolveMove, applyMove, revertMove,
   legalCells, mobility, isSolved
 } from './game.js';
 
-export const GEN_VERSION = 1;
+/**
+ * Generatorversion 2: der Rueckwaertsbau setzt neben 1x1-Wuerfeln auch 2x1-Steine
+ * (SPEC §6.3 A). Levelcodes der Version 1 erzeugen andere Level und sind nicht mehr
+ * gueltig — deshalb die Erhoehung.
+ */
+export const GEN_VERSION = 2;
 
 // --- Zufall (SPEC §11) --------------------------------------------------
 
@@ -92,20 +97,20 @@ function standardBaender() {
  * (Modus, Ziel, Masse) und nicht nach Levelnummer.
  */
 const KURVE = Object.freeze([
-  { mode: 'FASSADE', goal: 'ABBAU', W: 3, H: 4, D: 3, density: 0.95, maxChain: 1, q: 0, stars: [1.15, 1.35] },
-  { mode: 'FASSADE', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.92, maxChain: 2, q: 0, stars: [1.15, 1.30] },
-  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.95, maxChain: 2, q: 0.55, stars: [1.15, 1.30] },
-  { mode: 'FASSADE', goal: 'ABBAU', W: 5, H: 10, D: 5, density: 0.92, maxChain: 3, q: 0, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 3, H: 5, D: 3, density: 0.85, maxChain: 2, q: 0.60, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.85, maxChain: 3, q: 0, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.90, maxChain: 4, q: 0.80, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'ABBAU', W: 5, H: 8, D: 5, density: 0.90, maxChain: 4, q: 0, stars: [1.12, 1.25] },
-  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 5, H: 12, D: 5, density: 0.90, maxChain: 4, q: 0.70, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 5, H: 8, D: 5, density: 0.90, maxChain: 4, q: 0.70, stars: [1.12, 1.25] }
+  { mode: 'FASSADE', goal: 'ABBAU', W: 3, H: 4, D: 3, density: 0.95, maxChain: 1, q: 0, domino: 0, stars: [1.15, 1.35] },
+  { mode: 'FASSADE', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.92, maxChain: 2, q: 0, domino: 0.18, stars: [1.15, 1.30] },
+  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.95, maxChain: 2, q: 0.55, domino: 0.30, stars: [1.15, 1.30] },
+  { mode: 'FASSADE', goal: 'ABBAU', W: 5, H: 10, D: 5, density: 0.92, maxChain: 3, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 3, H: 5, D: 3, density: 0.85, maxChain: 2, q: 0.60, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.85, maxChain: 3, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.90, maxChain: 4, q: 0.80, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'ABBAU', W: 5, H: 8, D: 5, density: 0.90, maxChain: 4, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 5, H: 12, D: 5, density: 0.90, maxChain: 4, q: 0.70, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 5, H: 8, D: 5, density: 0.90, maxChain: 4, q: 0.70, domino: 0.30, stars: [1.12, 1.25] }
 ]);
 
 /** Freies Spiel und unbekannte Masse: Parameter der Stufe 8. */
-const KURVE_STANDARD = Object.freeze({ density: 0.90, maxChain: 4, q: 0.70, stars: [1.12, 1.25] });
+const KURVE_STANDARD = Object.freeze({ density: 0.90, maxChain: 4, q: 0.70, domino: 0.30, stars: [1.12, 1.25] });
 
 /** Generatorparameter einer Konfiguration; total, damit Levelcodes umkehrbar bleiben. */
 function kurvenParameter(mode, goal, W, H, D) {
@@ -133,6 +138,7 @@ function specVon(mode, goal, W, H, D, seed, attempt) {
     mode, goal, W, H, D,
     density: p.density,
     maxChain: p.maxChain,
+    dominoRate: p.domino,
     relocateRate: 0,
     weights: standardGewichte(),
     bands: standardBaender(),
@@ -149,6 +155,7 @@ function normSpec(spec) {
   const basis = specVon(mode, goal, W, H, D, spec.seed >>> 0, spec.attempt | 0);
   if (Number.isFinite(spec.density)) basis.density = Math.min(1, Math.max(0, spec.density));
   if (Number.isFinite(spec.maxChain)) basis.maxChain = Math.max(0, Math.floor(spec.maxChain));
+  if (Number.isFinite(spec.dominoRate)) basis.dominoRate = Math.min(1, Math.max(0, spec.dominoRate));
   if (Number.isFinite(spec.relocateRate)) basis.relocateRate = Math.min(1, Math.max(0, spec.relocateRate));
   if (Number.isFinite(spec.targetQuantile)) basis.targetQuantile = Math.min(1, Math.max(0, spec.targetQuantile));
   if (spec.weights) basis.weights = Object.assign(standardGewichte(), spec.weights);
@@ -263,12 +270,24 @@ export function parseHash(hash) {
  *
  * @returns {{ok:boolean, move:Object|null}}
  */
-export function pruefeUnExit(board, state, cell, dir, maxChain) {
+export function pruefeUnExit(board, state, cell, dir, maxChain, ext = EXT_NONE) {
   if (!Number.isInteger(cell) || cell < 0 || cell >= board.C) return { ok: false, move: null };
   if (state.occ[cell] !== EMPTY) return { ok: false, move: null };
   if (!Number.isInteger(dir) || dir < 0 || dir > 5 || board.valid[cell * 6 + dir] !== 1)
     return { ok: false, move: null };
-  const id = addCube(state, cell, dir);
+
+  if (ext !== EXT_NONE) {
+    // Der Anker ist stets die KLEINERE der beiden Zellen. Damit ist die serialisierte
+    // Form eines 2x1-Steins eindeutig und der Zeugenzug nennt immer den Anker.
+    if (!Number.isInteger(ext) || ext < 0 || ext > 5 || board.valid[cell * 6 + ext] !== 1)
+      return { ok: false, move: null };
+    const zweite = board.step[cell * 6 + ext];
+    if (zweite === OUT || zweite <= cell) return { ok: false, move: null };
+    if (state.occ[zweite] !== EMPTY) return { ok: false, move: null };
+    if (board.valid[zweite * 6 + dir] !== 1) return { ok: false, move: null };
+  }
+
+  const id = addCube(state, cell, dir, false, ext);
   const m = resolveMove(board, state, cell);
   dropCube(state, id);
   return { ok: m.kind === 'EXIT' && m.jumps <= maxChain, move: m };
@@ -290,12 +309,28 @@ export function pruefeUnRelocate(board, state, cubeId, von, nach, maxChain) {
   if (!Number.isInteger(von) || von < 0 || von >= board.C || von === nach) return { ok: false, move: null };
   if (state.occ[von] !== EMPTY) return { ok: false, move: null };
 
+  // Der Stein wird probeweise nach `von` zurueckgezogen. Bei einem 2x1-Stein wandert
+  // die zweite Zelle mit; liegt sie ausserhalb oder ist sie belegt, ist der Kandidat
+  // unbrauchbar.
+  const ext = state.extOf[cubeId];
+  const zweiNach = ext === EXT_NONE ? OUT : board.step[nach * 6 + ext];
+  const zweiVon = ext === EXT_NONE ? OUT : board.step[von * 6 + ext];
+  if (ext !== EXT_NONE) {
+    if (zweiVon === OUT) return { ok: false, move: null };
+    if (state.occ[zweiVon] !== EMPTY && state.occ[zweiVon] !== cubeId) return { ok: false, move: null };
+    if (board.valid[zweiVon * 6 + state.dirOf[cubeId]] !== 1) return { ok: false, move: null };
+  }
+
   state.occ[nach] = EMPTY;
+  if (zweiNach !== OUT) state.occ[zweiNach] = EMPTY;
   state.occ[von] = cubeId;
+  if (zweiVon !== OUT) state.occ[zweiVon] = cubeId;
   state.cellOf[cubeId] = von;
   const m = resolveMove(board, state, von);
   state.occ[von] = EMPTY;
+  if (zweiVon !== OUT) state.occ[zweiVon] = EMPTY;
   state.occ[nach] = cubeId;
+  if (zweiNach !== OUT) state.occ[zweiNach] = cubeId;
   state.cellOf[cubeId] = nach;
 
   const ok = (m.kind === 'STEP' || m.kind === 'JUMP') && m.to === nach && m.jumps <= maxChain;
@@ -328,15 +363,41 @@ function freieZellen(board, state) {
  * gesucht; die Kosten bleiben gleich, weil die Zahl freier Zellen mit jeder Platzierung
  * faellt. Oberhalb dieser Grenze gilt die Deckelung unveraendert.
  */
-function unExitCandidates(board, state, rng, spec) {
+/**
+ * Moegliche Ausleger einer Zelle: nur zur groesseren Zellnummer hin, damit der Anker
+ * eines 2x1-Steins eindeutig die kleinere Zelle ist.
+ */
+function auslegerVon(board, state, cell) {
+  const res = [];
+  for (let e = 0; e < 6; e++) {
+    if (board.valid[cell * 6 + e] !== 1) continue;
+    const z = board.step[cell * 6 + e];
+    if (z === OUT || z <= cell) continue;
+    if (state.occ[z] !== EMPTY) continue;
+    res.push(e);
+  }
+  return res;
+}
+
+/**
+ * @param {number} ext EXT_NONE fuer 1x1-Wuerfel, sonst werden ausschliesslich
+ *        2x1-Steine aufgezaehlt. Die Form wird je Runde vorab gewaehlt (tryGenerate),
+ *        damit die Kandidatensuche nicht um den Faktor der Auslegerzahl waechst.
+ */
+function unExitCandidates(board, state, rng, spec, zweizellig = false) {
   const cands = [];
+  const formen = (cell) => zweizellig ? auslegerVon(board, state, cell) : [EXT_NONE];
+
   if (board.C <= VOLLSUCHE_BIS) {
     for (let c = 0; c < board.C; c++) {
       if (state.occ[c] !== EMPTY) continue;
-      for (let d = 0; d < 6; d++) {
-        if (board.valid[c * 6 + d] !== 1) continue;
-        const pr = pruefeUnExit(board, state, c, d, spec.maxChain);
-        if (pr.ok) cands.push({ art: 'exit', cell: c, dir: d, move: pr.move });
+      const exts = formen(c);
+      for (let e = 0; e < exts.length; e++) {
+        for (let d = 0; d < 6; d++) {
+          if (board.valid[c * 6 + d] !== 1) continue;
+          const pr = pruefeUnExit(board, state, c, d, spec.maxChain, exts[e]);
+          if (pr.ok) cands.push({ art: 'exit', cell: c, dir: d, ext: exts[e], move: pr.move });
+        }
       }
     }
     return cands;
@@ -346,11 +407,14 @@ function unExitCandidates(board, state, rng, spec) {
   for (let k = 0; k < n && cands.length < MAX_KANDIDATEN; k++) {
     const cell = frei[k];
     const dirs = validDirs(board, cell);
-    for (let j = 0; j < dirs.length; j++) {
-      const pr = pruefeUnExit(board, state, cell, dirs[j], spec.maxChain);
-      if (pr.ok) {
-        cands.push({ art: 'exit', cell, dir: dirs[j], move: pr.move });
-        if (cands.length >= MAX_KANDIDATEN) break;
+    const exts = formen(cell);
+    for (let e = 0; e < exts.length && cands.length < MAX_KANDIDATEN; e++) {
+      for (let j = 0; j < dirs.length; j++) {
+        const pr = pruefeUnExit(board, state, cell, dirs[j], spec.maxChain, exts[e]);
+        if (pr.ok) {
+          cands.push({ art: 'exit', cell, dir: dirs[j], ext: exts[e], move: pr.move });
+          if (cands.length >= MAX_KANDIDATEN) break;
+        }
       }
     }
   }
@@ -457,13 +521,19 @@ function waehleBesten(board, state, cands, spec, rng) {
 /** Schreibt den akzeptierten Un-Zug fort und stellt ihn der Referenzliste VORAN. */
 function applyUnMove(state, cand, ref, info) {
   if (cand.art === 'exit') {
-    const id = addCube(state, cand.cell, cand.dir);
+    const id = addCube(state, cand.cell, cand.dir, false,
+      cand.ext === undefined ? EXT_NONE : cand.ext);
     ref.unshift(cand.cell);
     info.unshift({ cell: cand.cell, cubeId: id, kind: 'EXIT' });
     return;
   }
+  const ext = state.extOf[cand.cubeId];
+  const zweiNach = ext === EXT_NONE ? OUT : state.step[cand.nach * 6 + ext];
+  const zweiCell = ext === EXT_NONE ? OUT : state.step[cand.cell * 6 + ext];
   state.occ[cand.nach] = EMPTY;
+  if (zweiNach !== OUT) state.occ[zweiNach] = EMPTY;
   state.occ[cand.cell] = cand.cubeId;
+  if (zweiCell !== OUT) state.occ[zweiCell] = cand.cubeId;
   state.cellOf[cand.cubeId] = cand.cell;
   ref.unshift(cand.cell);
   info.unshift({ cell: cand.cell, cubeId: cand.cubeId, kind: cand.move.kind });
@@ -568,18 +638,33 @@ function tryGenerate(board, spec, rng) {
   const N = Math.min(MAX_CUBES, board.C, Math.round(spec.density * board.C));
   let guard = 60 * N + 60;
 
-  while (state.aliveCount < N && guard-- > 0) {
+  // Belegte Zellen statt Steinzahl als Abbruchmass: ein 2x1-Stein fuellt zwei Zellen,
+  // sonst waere die Dichte von der Steinform abhaengig.
+  const belegt = () => {
+    let n = 0;
+    for (let c = 0; c < board.C; c++) if (state.occ[c] !== EMPTY) n++;
+    return n;
+  };
+
+  let voll = belegt();
+  while (voll < N && guard-- > 0) {
     const useRelocate = state.aliveCount > 2 && rng() < spec.relocateRate;
+    // Form der Runde vorab waehlen; ein 2x1-Stein braucht zwei freie Zellen.
+    const willZwei = !useRelocate && (N - voll) >= 2 && rng() < (spec.dominoRate || 0);
+
     let cands = useRelocate ? unRelocateCandidates(board, state, rng, spec)
-      : unExitCandidates(board, state, rng, spec);
+      : unExitCandidates(board, state, rng, spec, willZwei);
+    if (cands.length === 0 && willZwei)
+      cands = unExitCandidates(board, state, rng, spec, false);
     if (cands.length === 0)
-      cands = useRelocate ? unExitCandidates(board, state, rng, spec)
+      cands = useRelocate ? unExitCandidates(board, state, rng, spec, false)
         : unRelocateCandidates(board, state, rng, spec);
     if (cands.length === 0) break;   // -> Fuellrueckfall
     applyUnMove(state, waehleBesten(board, state, cands, spec, rng), ref, info);
+    voll = belegt();
   }
 
-  if (state.aliveCount < N)
+  if (voll < N)
     fillByDepth(board, state, ref, rng, { maxChain: spec.maxChain, limit: N, info });
 
   return { state, ref, info };
@@ -592,7 +677,12 @@ const GEN_PLAYOUTS = 4;
 
 function kennzahlen(board, level, runs, rng) {
   const start = createState(board, level.cubes, level.goal);
-  const dichte = board.C > 0 ? level.cubes.length / board.C : 0;
+  // Dichte = Anteil BELEGTER ZELLEN, nicht Steine je Zelle. Ein 2x1-Stein fuellt zwei
+  // Zellen; die Steinzahl allein waere von der Steinform abhaengig und als Fuellmass
+  // unbrauchbar (SPEC §3.5).
+  let belegteZellen = 0;
+  for (let c = 0; c < board.C; c++) if (start.occ[c] !== EMPTY) belegteZellen++;
+  const dichte = board.C > 0 ? belegteZellen / board.C : 0;
 
   // Referenzloesung einmal durchspielen: Kettenanteil, laengste Kette, triviale Austritte.
   let ketten = 0, maxK = 0, trivial = 0;
@@ -674,8 +764,11 @@ function toLevel(board, roh, spec) {
   for (let c = 0; c < board.C; c++) {
     const id = state.occ[c];
     if (id === EMPTY || !state.alive[id]) continue;
+    if (state.cellOf[id] !== c) continue;   // zweite Zelle eines 2x1-Steins
     neueId[id] = cubes.length;
-    cubes.push({ cell: c, dir: state.dirOf[id], target: false });
+    const stein = { cell: c, dir: state.dirOf[id], target: false };
+    if (state.extOf[id] !== EXT_NONE) stein.ext = state.extOf[id];
+    cubes.push(stein);
   }
   if (cubes.length === 0) return null;
 
@@ -826,6 +919,7 @@ function pruefeStruktur(level) {
   if (level.cubes.length > MAX_CUBES || level.cubes.length > board.C) return { ok: false, reason: 'cubes' };
 
   let vorher = -1, ziele = 0;
+  const zellenBelegt = new Set();
   for (let i = 0; i < level.cubes.length; i++) {
     const cu = level.cubes[i];
     if (!cu || typeof cu !== 'object') return { ok: false, reason: 'cube@' + i };
@@ -833,6 +927,21 @@ function pruefeStruktur(level) {
       return { ok: false, reason: 'cell@' + i };
     if (!Number.isInteger(cu.dir) || cu.dir < 0 || cu.dir > 5 || board.valid[cu.cell * 6 + cu.dir] !== 1)
       return { ok: false, reason: 'dir@' + i };
+
+    // 2x1-Stein: der Anker MUSS die kleinere der beiden Zellen sein, damit die
+    // Beschreibung eindeutig ist und der Zeugenzug den Anker nennt.
+    if (cu.ext !== undefined) {
+      if (!Number.isInteger(cu.ext) || cu.ext < 0 || cu.ext > 5) return { ok: false, reason: 'ext@' + i };
+      if (board.valid[cu.cell * 6 + cu.ext] !== 1) return { ok: false, reason: 'ext@' + i };
+      const zweite = board.step[cu.cell * 6 + cu.ext];
+      if (zweite === OUT || zweite <= cu.cell) return { ok: false, reason: 'ext@' + i };
+      if (board.valid[zweite * 6 + cu.dir] !== 1) return { ok: false, reason: 'ext@' + i };
+      if (zellenBelegt.has(zweite)) return { ok: false, reason: 'ext@' + i };
+      zellenBelegt.add(zweite);
+    }
+    if (zellenBelegt.has(cu.cell)) return { ok: false, reason: 'cell@' + i };
+    zellenBelegt.add(cu.cell);
+
     vorher = cu.cell;
     if (cu.target) { ziele++; if (level.targetId !== i) return { ok: false, reason: 'targetId' }; }
   }
