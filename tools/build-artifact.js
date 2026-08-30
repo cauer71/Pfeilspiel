@@ -17,7 +17,7 @@
 // kaputtes Bundle zu erzeugen.
 //
 // Aufruf: node tools/build-artifact.js [ziel.html]
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -34,6 +34,26 @@ function abbruch(text) {
   console.error('Bau abgebrochen: ' + text);
   process.exit(1);
 }
+
+// --- 0. Die Listen unten gegen den Quellstand halten -----------------------
+// Eine hier vergessene Datei faellt sonst still aus der Einzeldatei heraus und
+// das Erzeugnis veraltet, ohne dass irgendetwas rot wird. Deshalb wird das
+// Verzeichnis gelesen und mit der Aufzaehlung verglichen.
+function listeAbgleichen(verzeichnis, endung, gefuehrt, was) {
+  const vorhanden = readdirSync(join(WURZEL, verzeichnis))
+    .filter((n) => n.endsWith(endung)).sort();
+  const gefuehrtKurz = gefuehrt.map((p) => p.slice(p.lastIndexOf('/') + 1)).sort();
+  const fehlt = vorhanden.filter((n) => !gefuehrtKurz.includes(n));
+  const zuviel = gefuehrtKurz.filter((n) => !vorhanden.includes(n));
+  if (fehlt.length) abbruch(`${was}: ${verzeichnis} enthaelt ${fehlt.join(', ')}, aber die Liste im Werkzeug nicht.`);
+  if (zuviel.length) abbruch(`${was}: die Liste im Werkzeug nennt ${zuviel.join(', ')}, ${verzeichnis} nicht.`);
+}
+
+/** Stylesheets in Ladereihenfolge — Tokens zuerst, Effekte zuletzt. */
+const STYLES = ['public/src/styles/tokens.css', 'public/src/styles/base.css', 'public/src/styles/fx.css'];
+
+listeAbgleichen('public/src', '.js', MODULE, 'Spielmodule');
+listeAbgleichen('public/src/styles', '.css', STYLES, 'Stylesheets');
 
 // --- 1. three als gekapselte CommonJS-Fassung -----------------------------
 const dreiQuelle = lies('node_modules/three/build/three.cjs');
@@ -227,7 +247,7 @@ if (/^\s*export\s/m.test(spiel)) abbruch('nicht entferntes export im Bundle');
 const html = lies('public/index.html');
 const koerper = html.slice(html.indexOf('<body>') + '<body>'.length, html.lastIndexOf('</body>')).trim();
 
-const css = ['public/src/styles/tokens.css', 'public/src/styles/base.css', 'public/src/styles/fx.css']
+const css = STYLES
   .map(p => `/* ===== ${p} ===== */\n${lies(p)}`)
   .join('\n\n');
 

@@ -983,10 +983,18 @@ function buildMaterialSet(skin, atlas) {
   ghostTarget.transparent = true; ghostTarget.opacity = ghostOpacity; ghostTarget.depthWrite = false;
 
   const accentCol = (t.atlas && t.atlas.accent) || '#5B8CFF';
-  const danger = (skin && skin.css && skin.css['--ps-danger']) || '#E2564A';
+  // Signalfarbe des Ungueltig-Blitzes. Sie steht in skin.three.flash und nicht mehr im
+  // Token --ps-danger: das faerbt zugleich Text (.ps-note.is-error, .ps-toast.is-error)
+  // und ist dort auf 4,5:1 abgedunkelt, was den Blitz im Bild stumpf machen wuerde.
+  // Ein Skin ohne three.flash faellt auf das bisherige Verhalten zurueck.
+  const flashTok = t.flash || {};
+  const flashCol = (flashTok.emissive === undefined || flashTok.emissive === null)
+    ? ((skin && skin.css && skin.css['--ps-danger']) || '#E2564A')
+    : flashTok.emissive;
   const flash = base.clone();
-  flash.emissive = colorOf(danger, 0xe2564a);
-  flash.emissiveIntensity = 0.9;
+  flash.emissive = colorOf(flashCol, 0xe2564a);
+  flash.emissiveIntensity = flashTok.emissiveIntensity === undefined
+    ? 0.9 : flashTok.emissiveIntensity;
 
   // Vorschau: Geisterspur (Atlas, HINT-Zeile) und Traegerleuchten im fxGroup.
   const preview = new THREE.MeshBasicMaterial({

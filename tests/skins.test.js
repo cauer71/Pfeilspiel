@@ -33,7 +33,7 @@ const CSS_COLOR_KEYS = [
 
 const THREE_KEYS = [
   'background', 'hemi', 'key', 'fill', 'envIntensity', 'toneMapping', 'exposure',
-  'shadows', 'cube', 'cubeLow', 'target', 'hover', 'ghost', 'coreBox', 'atlas'
+  'shadows', 'cube', 'cubeLow', 'target', 'hover', 'flash', 'ghost', 'coreBox', 'atlas'
 ];
 
 const ATLAS_KEYS = [
@@ -159,7 +159,8 @@ test('three-Farben sind ganzzahlige Hexzahlen, Atlasfarben CSS-Farbstrings', () 
       ['background', t.background], ['hemi.sky', t.hemi.sky], ['hemi.ground', t.hemi.ground],
       ['key.color', t.key.color], ['fill.color', t.fill.color],
       ['cube.emissive', t.cube.emissive], ['target.emissive', t.target.emissive],
-      ['hover.emissive', t.hover.emissive], ['coreBox.color', t.coreBox.color]
+      ['hover.emissive', t.hover.emissive], ['flash.emissive', t.flash.emissive],
+      ['coreBox.color', t.coreBox.color]
     ]) {
       assert.ok(isHexNumber(v), skin.id + ' ' + name + ' ist keine Hexzahl: ' + v);
     }
@@ -564,12 +565,19 @@ test('createAudio bleibt ohne WebAudio und ohne Nutzergeste stumm', async () => 
 });
 
 // --- Kontrast ------------------------------------------------------------
-// Regression: Apple trug '--ps-success': '#30D158'. base.css faerbt damit
-// `.ps-note.is-ok` (font-size .9em, also Normaltext) in einem Panel aus
-// --ps-panel-bg ueber --ps-bg — auf Apple effektiv rgb(250,251,252). Das ergab
-// 1,95:1 statt der geforderten 4,5:1. Die Panels tragen backdrop-filter, hinter
-// dem Glas kann statt --ps-bg auch die helle Szene bis hin zu weissen Wuerfeln
-// stehen; darum wird zusaetzlich gegen --ps-bg-2 geprueft (Apple: #FFFFFF).
+// Ziel: jeder Normaltext haelt 4,5:1 gegen den Grund, auf dem er wirklich steht.
+// Geprueft wird darum nicht ein einzelnes Token, sondern jedes Text-auf-Hintergrund-
+// Paar, das base.css bildet — Seitengrund, Glaspanel, Schaltflaeche, Akzentflaeche.
+//
+// Die Panels tragen backdrop-filter; hinter dem Glas steht nicht nur --ps-bg, sondern
+// die gerenderte Szene bis hin zu hellen Wuerfeln. Jeder Glasgrund wird deshalb sowohl
+// ueber --ps-bg als auch ueber --ps-bg-2 kompositiert und beides geprueft.
+//
+// Behobene Regressionen, die diese Probe wieder einfangen MUSS (alle im Skin apple):
+//   --ps-success '#30D158'  ->  1,95:1 auf .ps-note.is-ok
+//   --ps-danger  '#FF3B30'  ->  3,42:1 auf .ps-note.is-error und .ps-toast.is-error
+//   --ps-accent  '#0A84FF'  ->  3,65:1 fuer die weisse Beschriftung von .ps-btn-primary
+//   --ps-accent-2 '#5AC8FA' ->  1,90:1 fuer dieselbe Beschriftung im :hover
 
 /** '#RRGGBB' oder 'rgb(a)(…)' zu [r,g,b,a] mit 0..255 bzw. 0..1. */
 function parseColor(value) {
@@ -605,6 +613,9 @@ function contrast(a, b) {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
+/** WCAG 2.1 AA fuer Normaltext. */
+const MIN_KONTRAST = 4.5;
+
 test('Kontrasthilfen rechnen wie WCAG 2.1', () => {
   assert.equal(Math.round(contrast(parseColor('#000000'), parseColor('#FFFFFF'))), 21);
   assert.equal(contrast(parseColor('#777777'), parseColor('#777777')), 1);
@@ -614,15 +625,119 @@ test('Kontrasthilfen rechnen wie WCAG 2.1', () => {
     [250, 251, 252]);
 });
 
-test('--ps-success bleibt auf dem Panelgrund lesbar (4,5:1 fuer .ps-note.is-ok)', () => {
-  for (const skin of skins()) {
-    const panel = parseColor(skin.css['--ps-panel-bg']);
-    for (const key of ['--ps-bg', '--ps-bg-2']) {
-      const grund = composite(panel, parseColor(skin.css[key]));
-      const ratio = contrast(parseColor(skin.css['--ps-success']), grund);
-      assert.ok(ratio >= 4.5,
-        skin.id + ': --ps-success ' + skin.css['--ps-success'] + ' auf Panel ueber ' + key
-        + ' nur ' + ratio.toFixed(2) + ':1, gefordert 4,5:1');
+/**
+ * Die deckenden Grundflaechen, auf denen base.css Text absetzt: der Seitengrund selbst
+ * (body, .ps-summary-item, .ps-table-wrap) und das Glaspanel darueber (.ps-panel,
+ * .ps-settings, .ps-toast, .ps-noscript).
+ * @param {Record<string,string>} css
+ * @returns {{name:string, rgb:number[]}[]}
+ */
+function grundflaechen(css) {
+  const out = [];
+  for (const key of ['--ps-bg', '--ps-bg-2']) {
+    const seite = parseColor(css[key]);
+    out.push({ name: 'Seitengrund ' + key, rgb: seite });
+    out.push({
+      name: 'Glaspanel ueber ' + key,
+      rgb: composite(parseColor(css['--ps-panel-bg']), seite)
+    });
+  }
+  return out;
+}
+
+/**
+ * Jedes Text-auf-Hintergrund-Paar aus base.css, mit der Stelle, die es bildet.
+ * @param {Record<string,string>} css
+ * @returns {{token:string, wert:string, stelle:string, grund:{name:string,rgb:number[]}}[]}
+ */
+function textPaare(css) {
+  const paare = [];
+  const add = (token, stelle, grund) => paare.push({ token, wert: css[token], stelle, grund });
+  /** Deckt eine halbdurchsichtige Flaeche ueber einen bekannten Grund. */
+  const ueber = (key, grund) => ({
+    name: key + ' ueber ' + grund.name,
+    rgb: composite(parseColor(css[key]), grund.rgb)
+  });
+
+  for (const flaeche of grundflaechen(css)) {
+    add('--ps-fg', 'body, .ps-toast, .ps-noscript, .ps-summary dd, .ps-table td', flaeche);
+    add('--ps-fg-muted',
+      '.ps-sub, .ps-note, .ps-stat-k, .ps-field-k, .ps-summary dt, .ps-table th', flaeche);
+
+    // Schaltflaechen, Auswahlfelder und Eingaben; ihr Grund kann durchsichtig sein.
+    for (const key of ['--ps-btn-bg', '--ps-btn-bg-hover']) {
+      add('--ps-btn-fg', '.ps-btn, .ps-toggle', ueber(key, flaeche));
+      add('--ps-fg', '.ps-select, .ps-input', ueber(key, flaeche));
     }
+
+    // .ps-chip, .ps-toggle.is-on und die hervorgehobenen Tabellenzeilen.
+    const soft = ueber('--ps-accent-soft', flaeche);
+    add('--ps-fg-muted', '.ps-chip, .ps-table tbody tr:hover td', soft);
+    add('--ps-fg', '.ps-toggle.is-on, .ps-table tbody tr.is-self td', soft);
+  }
+
+  // Zustandsfarben stehen ausschliesslich im Panel: .ps-note im Dialog, .ps-toast.
+  for (const flaeche of grundflaechen(css).filter((f) => f.name.startsWith('Glaspanel'))) {
+    add('--ps-success', '.ps-note.is-ok', flaeche);
+    add('--ps-danger', '.ps-note.is-error, .ps-toast.is-error', flaeche);
+  }
+
+  // Hauptknoepfe: Beschriftung auf der Akzentflaeche, im Ruhezustand und im :hover.
+  add('--ps-accent-fg', '.ps-btn-primary',
+    { name: '--ps-accent ' + css['--ps-accent'], rgb: parseColor(css['--ps-accent']) });
+  add('--ps-accent-fg', '.ps-btn-primary:hover',
+    { name: '--ps-accent-2 ' + css['--ps-accent-2'], rgb: parseColor(css['--ps-accent-2']) });
+
+  return paare;
+}
+
+/**
+ * Beschreibt jedes Paar unter 4,5:1; eine leere Liste heisst: alles lesbar.
+ * @param {Record<string,string>} css
+ * @returns {string[]}
+ */
+function kontrastverstoesse(css) {
+  const out = [];
+  for (const paar of textPaare(css)) {
+    const ratio = contrast(parseColor(paar.wert), paar.grund.rgb);
+    if (ratio >= MIN_KONTRAST) continue;
+    out.push(paar.token + ' ' + paar.wert + ' auf ' + paar.grund.name
+      + ' (' + paar.stelle + ') nur ' + ratio.toFixed(2) + ':1');
+  }
+  return out;
+}
+
+test('die Probe deckt die Paare aus base.css vollstaendig ab', () => {
+  const paare = textPaare(SKINS.apple.css);
+  const tokens = new Set(paare.map((p) => p.token));
+  assert.deepEqual([...tokens].sort(),
+    ['--ps-accent-fg', '--ps-btn-fg', '--ps-danger', '--ps-fg', '--ps-fg-muted',
+      '--ps-success']);
+  // Jeder Textwert steht ueber Panel- und Seitengrund bzw. beiden Akzentflaechen.
+  const gruende = new Set(paare.map((p) => p.grund.name));
+  assert.ok(gruende.size >= 12, 'zu wenige Gruende geprueft: ' + gruende.size);
+});
+
+test('jedes Text-auf-Hintergrund-Paar aus base.css haelt 4,5:1', () => {
+  for (const skin of skins()) {
+    const verstoesse = kontrastverstoesse(skin.css);
+    assert.deepEqual(verstoesse, [], skin.id + ': ' + verstoesse.join(' | '));
+  }
+});
+
+test('die Probe faengt jeden behobenen Altwert wieder ein', () => {
+  const alt = [
+    ['--ps-success', '#30D158'],
+    ['--ps-danger', '#FF3B30'],
+    ['--ps-accent', '#0A84FF'],
+    ['--ps-accent-2', '#5AC8FA']
+  ];
+  for (const [token, wert] of alt) {
+    const css = Object.assign({}, SKINS.apple.css, { [token]: wert });
+    const verstoesse = kontrastverstoesse(css);
+    assert.ok(verstoesse.length > 0,
+      'Altwert ' + token + ' ' + wert + ' bliebe unbemerkt');
+    assert.ok(verstoesse.some((v) => v.includes(wert)),
+      'Altwert ' + token + ' ' + wert + ' nicht benannt: ' + verstoesse.join(' | '));
   }
 });

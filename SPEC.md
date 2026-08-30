@@ -632,8 +632,9 @@ export function createPointerInput(opts: {
   onHover?: (cell:number|null) => void,
   onLongPress?: (down:boolean) => void,
   onActivity?: () => void,
+  controls?: OrbitControls,        // fuer Daempfungs-Verwurf und Refit-Ausnahme, §8.7
   thresholds?: {moveMouse?:5, moveTouch?:12, maxMs?:600}
-}): {update(): void, pickAt(x:number, y:number): object|null, dispose(): void};
+}): {update(): void, pickAt(x:number, y:number, spread?:number): object|null, dispose(): void};
 ```
 
 ### 4.4 `src/skins.js`
@@ -672,11 +673,39 @@ export function createUI(handlers: {
  *  @property {(s:{moves,timeMs,par,stars,undos})=>void} showWin
  *  @property {()=>void} hideWin
  *  @property {()=>void} showDeadEnd             Overlay mit Rueckgaengig/Neustart
+ *  @property {()=>void} hideDeadEnd             Gegenstueck; loest die Sackgasse von aussen auf
  *  @property {(rows:ScoreRow[])=>void} showBoard
  *  @property {(text:string, kind?:'info'|'error')=>void} toast
  *  @property {(b:boolean)=>void} setBusy
- *  @property {(id:string)=>void} setSkinChip */
+ *  @property {(id:string)=>void} setSkinChip
+ *  @property {(v:{skin?:string, mode?:string, goal?:string, level?:number,
+ *                 speed?:number, xray?:boolean, muted?:boolean})=>void} setControls
+ *    Bringt die Bedienelemente auf den Stand des Spiels (URL-Hash, gespeicherte
+ *    Einstellungen), OHNE die Rueckrufe auszuloesen. */
 ```
+
+**Overlays sind ein Stapel, kein Schalter — normativ.**
+
+Die Overlays (Sieg, Sackgasse, Bestenliste) liegen uebereinander, nicht nebeneinander. Aus dem
+Sieg-Overlay fuehrt ein Knopf in die Bestenliste; kehrte man von dort ins Nichts zurueck, waere
+der Sieg samt Eintragefeld verloren. Deshalb gilt:
+
+* Oeffnet ein Overlay, waehrend eines offen ist, wird das bisherige **verdeckt** (`hidden`), nicht
+  geschlossen. Sein Rueckweg (`vorher`) und der zuletzt fokussierte Knoten (`zurueck`) bleiben
+  erhalten.
+* Schliesst das oberste Overlay, kommt das darunterliegende **samt Fokus** zurueck. Ist der
+  gemerkte Knoten nicht mehr im Dokument, faengt das erste fokussierbare Element des
+  wiederkehrenden Overlays den Fokus.
+* Wird ein Overlay geoeffnet, das im Rueckweg schon vorkommt, wird alles **darueber** geschlossen,
+  statt einen zweiten Eintrag anzulegen. Der Stapel DARF NIE einen Kreis enthalten.
+* `hideWin`/`hideDeadEnd` DUERFEN ein **verdecktes** Overlay treffen. Dann wird nur der Rueckweg
+  dorthin gekappt: das Overlay kehrt spaeter nicht wieder, das obenliegende bleibt unberuehrt.
+* Escape und die Tabulatorschleife gelten immer nur fuer das **oberste** Overlay. Die Sackgasse
+  wird mit `{escape:false}` geoeffnet: sie ist nie durch Wegklicken aufloesbar, sondern nur ueber
+  Rueckgaengig, Neustart oder `hideDeadEnd` von aussen. Ein Blick in die Bestenliste MUSS sie
+  danach unveraendert zurueckbringen.
+
+Testgegenstand: §10.9 (`tests/ui.test.js`) gegen ein minimales DOM-Modell, ohne Browser.
 
 ### 4.6 `src/api.js`
 
@@ -1130,6 +1159,32 @@ pruefbar.
 `var(--ps-*)`. `[data-skin="…"]`-Selektoren sind nur fuer Dinge zulaessig, die eine Custom Property
 nicht ausdruecken kann (Existenz des CRT-Overlays, Dekor-Pseudoelemente, Textrenderer).
 
+**Kontrast — normativ.** Jede Textfarbe eines Skins MUSS gegen den Grund, auf dem sie
+**tatsaechlich** steht, mindestens **4,5:1** nach WCAG 2.1 halten (AA, Normaltext). Das gilt
+fuer `--ps-fg`, `--ps-fg-muted`, `--ps-success`, `--ps-danger`, `--ps-btn-fg` und
+`--ps-accent-fg`, und zwar so gerechnet:
+
+1. **Der Grund ist die gestapelte Flaeche, nicht `--ps-bg`.** Halbdeckende Flaechen
+   (`--ps-panel-bg`, `--ps-btn-bg`, `--ps-btn-bg-hover`, `--ps-accent-soft`) werden ueber den
+   darunterliegenden deckenden Grund **alphakompositiert**, in derselben Schachtelung, die
+   `base.css` aufbaut (Knopf im Panel auf der Seite).
+2. **Glaspanels werden im schlechtesten Fall gerechnet.** Hinter `backdrop-filter` steht nicht
+   `--ps-bg`, sondern die gerenderte Szene. Jeder Panelgrund wird deshalb sowohl ueber `--ps-bg`
+   als auch ueber `--ps-bg-2` kompositiert; der ungueltigste der beiden Werte entscheidet.
+3. **Deckende Akzentflaechen zaehlen als eigener Grund.** `--ps-accent-fg` wird gegen `--ps-accent`
+   (`.ps-btn-primary`) **und** gegen `--ps-accent-2` (`:hover`) geprueft.
+
+Diese Anforderung gilt ausschliesslich fuer **Text im DOM**. Die Farben unter `three` sind
+Bildfarben und ausdruecklich **ausgenommen**: `target.color`, `atlas.bodyTarget`, `atlas.glyph`,
+`hover.emissive` und `flash.emissive` faerben Wuerfel, nicht Buchstaben. Ein Skin DARF deshalb im
+Bild ein leuchtendes Systemgruen fuehren und zugleich ein abgedunkeltes `--ps-success` — genau so
+ist „Apple“ gebaut (§7.4). Damit die Abdunklung nicht ins Bild durchschlaegt, hat der
+Ungueltig-Blitz mit `three.flash` einen **eigenen** Token und haengt nicht mehr an `--ps-danger`.
+
+Reine Flaechen- und Ringfarben ohne Text (`--ps-accent-soft` als Flaeche, `--ps-focus-ring`,
+`--ps-panel-border`, `--ps-scrim`) tragen keine Kontrastforderung; sie DUERFEN von der
+Akzentfarbe abweichen. Testgegenstand: §10.7.
+
 ### 7.2 Schema
 
 ```js
@@ -1157,6 +1212,7 @@ nicht ausdruecken kann (Existenz des CRT-Overlays, Dekor-Pseudoelemente, Textren
  *  @property {{roughness:number, transmission:number, opacity:number}} cubeLow  Override quality 'low'
  *  @property {{color:string, emissive:number, emissiveIntensity:number}} target
  *  @property {{emissive:number, emissiveIntensity:number}} hover
+ *  @property {{emissive:number, emissiveIntensity:number}} flash   Ungueltig-Blitz (§4.3)
  *  @property {{opacity:number}} ghost                     Roentgenmodus
  *  @property {{color:number, opacity:number}} coreBox     Innenkern-Quader (FASSADE)
  *  @property {AtlasTokens} atlas */
@@ -1255,6 +1311,7 @@ export const SKINS = { modern: {
     cubeLow:{ roughness:0.68, transmission:0, opacity:1 },
     target:{ color:'#4ADE80', emissive:0x0F3D24, emissiveIntensity:0.60 },
     hover:{ emissive:0x5B8CFF, emissiveIntensity:0.22 },
+    flash:{ emissive:0xE2564A, emissiveIntensity:0.90 },
     ghost:{ opacity:0.16 },
     coreBox:{ color:0x0E1116, opacity:1.0 },
     atlas:{ tile:256, gutter:16, style:'solidTriangle',
@@ -1301,9 +1358,12 @@ apple: {
     '--ps-panel-shadow':'0 10px 34px rgba(16,24,40,.10), 0 1px 2px rgba(16,24,40,.06)',
     '--ps-panel-radius':'22px',
     '--ps-fg':'#1C1C1E', '--ps-fg-muted':'#5A5A5F',
-    '--ps-accent':'#0A84FF', '--ps-accent-2':'#5AC8FA',
+    // Weisse Beschriftung auf .ps-btn-primary: 4,70:1 im Ruhezustand, 5,98:1 im :hover.
+    '--ps-accent':'#0071E3', '--ps-accent-2':'#005FCC',
+    // Reine Flaechen-/Ringfarbe, ohne Text darauf: der alte Blauton bleibt (§7.1).
     '--ps-accent-soft':'rgba(10,132,255,.12)', '--ps-accent-fg':'#FFFFFF',
-    '--ps-success':'#30D158', '--ps-danger':'#FF3B30',
+    // Auf dem Glaspanel: 5,07:1 (.ps-note.is-ok) bzw. 5,19:1 (.ps-note.is-error, .ps-toast).
+    '--ps-success':'#1C7C3C', '--ps-danger':'#D70015',
     '--ps-btn-bg':'rgba(255,255,255,.75)', '--ps-btn-bg-hover':'rgba(255,255,255,.94)',
     '--ps-btn-fg':'#1C1C1E', '--ps-btn-border':'1px solid rgba(255,255,255,.85)',
     '--ps-btn-radius':'18px', '--ps-btn-press':'scale(.96)',
@@ -1319,20 +1379,21 @@ apple: {
     '--ps-gap':'12px', '--ps-hud-pad':'14px 18px'
   },
   three:{
-    background:0xEEF1F5,
-    hemi:{ sky:0xFFFFFF, ground:0xC9D2DE, intensity:1.10 },
-    key:{ color:0xFFFFFF, intensity:1.40, castShadow:true },
-    fill:{ color:0xCFE3FF, intensity:0.40 },
-    envIntensity:0.90, toneMapping:'Neutral', exposure:1.00, shadows:true,
-    cube:{ roughness:0.28, metalness:0.0, emissive:0x000000,
-           emissiveIntensity:0.0, envMapIntensity:1.10 },
+    background:0xD9E1EB,          // deutlich dunkler als die Wuerfel, sonst verschwinden sie
+    hemi:{ sky:0xFFFFFF, ground:0xA9B7C7, intensity:1.05 },
+    key:{ color:0xFFFFFF, intensity:1.25, castShadow:true },
+    fill:{ color:0xCFE3FF, intensity:0.28 },
+    envIntensity:0.55, toneMapping:'Neutral', exposure:0.96, shadows:true,
+    cube:{ roughness:0.34, metalness:0.0, emissive:0x000000,
+           emissiveIntensity:0.0, envMapIntensity:0.50 },
     cubeLow:{ roughness:0.32, transmission:0, opacity:0.96 },
     target:{ color:'#34C759', emissive:0x134A25, emissiveIntensity:0.25 },
     hover:{ emissive:0x0A84FF, emissiveIntensity:0.12 },
+    flash:{ emissive:0xFF3B30, emissiveIntensity:0.90 },
     ghost:{ opacity:0.14 },
-    coreBox:{ color:0xEEF1F5, opacity:1.0 },
+    coreBox:{ color:0xD9E1EB, opacity:1.0 },
     atlas:{ tile:256, gutter:16, style:'softChevron',
-            body:'#FFFFFF', bodyTarget:'#BFF7CE', glyph:'#48484A', glyphAlpha:0.78,
+            body:'#FFFFFF', bodyTarget:'#BFF7CE', glyph:'#1C1C1E', glyphAlpha:0.92,
             accent:'#0A84FF', margin:0.26, shaft:0.22, head:0.50, radius:0.10,
             stroke:0.11, grid:16, glow:0, nearest:false, anisotropy:8 }
   },
@@ -1363,6 +1424,14 @@ apple: {
 },
 ```
 
+> **Festlegung:** Der Skin ist in sich absichtlich **zweigeteilt**. Im DOM stehen die
+> abgedunkelten Werte (`--ps-success` `#1C7C3C`, `--ps-danger` `#D70015`, `--ps-accent` `#0071E3`),
+> weil dort Text darauf liegt und §7.1 gilt. Im Bild bleiben das helle Systemgruen
+> (`target.color` `#34C759`, `atlas.bodyTarget` `#BFF7CE`) und das satte Systemrot
+> (`flash.emissive` `0xFF3B30`) — Wuerfelfarben tragen keinen Text und sind von §7.1 ausgenommen.
+> Diese Trennung ist der Grund fuer den eigenen Token `three.flash`: ohne ihn zoege jede
+> Abdunklung von `--ps-danger` den Ungueltig-Blitz mit ins Stumpfe.
+>
 > **Festlegung:** Apple verwendet **kein** `MeshPhysicalMaterial` mit `transmission`. Der
 > Glaseindruck entsteht aus `--ps-panel-blur` im DOM, hoher `envIntensity`, niedriger `roughness`
 > und weichen Schatten. Grund: `transmission` rendert pro Frame einen zusaetzlichen Buffer, ist
@@ -1410,6 +1479,7 @@ arcade: {
     cubeLow:{ roughness:1.0, transmission:0, opacity:1 },
     target:{ color:'#39FF14', emissive:0x1B4D0C, emissiveIntensity:1.60 },
     hover:{ emissive:0xFF2E88, emissiveIntensity:0.50 },
+    flash:{ emissive:0xFF3131, emissiveIntensity:0.90 },
     ghost:{ opacity:0.18 },
     coreBox:{ color:0x05070A, opacity:1.0 },
     atlas:{ tile:128, gutter:16, style:'pixelArrow',
@@ -1792,10 +1862,31 @@ Dicke-Finger-Fallback auf Touch: trifft der zentrale Strahl nichts, vier Zusatzs
   Roentgenmodus aus).
 * `active.size > 1` (zweiter Finger, Pinch) disqualifiziert den Tap **sofort**.
 * Der Tap MUSS auf **derselben Zelle** enden, die beim `pointerdown` getroffen wurde.
-* Ein Tap waehrend laufender Kamera-Daempfung (`controls`-`change` innerhalb der letzten 80 ms bei
-  gleichzeitig gesetztem `moved`) wird verworfen.
+* **Zittertoleranz.** Neben `moved` fuehrt die Eingabe ein zweites, weicheres Merkmal `movedAny`.
+  Es wird gesetzt, sobald die Bewegung die **halbe** Schwelle ueberschreitet — mehr als 2,5 px
+  mit der Maus, mehr als 6 px auf Touch —, und NICHT schon bei `dist > 0`. Begruendung: ein
+  ruhig gehaltener Finger wandert
+  auf jedem Geraet um ein bis zwei Pixel. Mit `dist > 0` setzte praktisch jeder Tipp `movedAny`
+  und lief damit in den Verwurf des naechsten Punktes — gueltige Tipps gingen reihenweise
+  verloren. Erst die halbe Schwelle trennt Zittern von bewusstem Wischen.
+* Ein Tap waehrend nachlaufender Kamera-Daempfung wird verworfen: `movedAny` gesetzt **und**
+  letztes `change`-Ereignis der `controls` weniger als **80 ms** her. `moved` disqualifiziert
+  ohnehin fuer sich allein; der Verwurf greift also genau im Band zwischen halber und ganzer
+  Schwelle — dort, wo der Zeiger die Kamera bereits gedreht hat, ohne den Tap formal zu verlieren.
+* **Refit-Ausnahme.** `change`-Ereignisse zaehlen nur, solange `controls.enabled !== false`.
+  Waehrend eines **programmatischen** Kamerawechsels (`fitCamera` als Spherical-Tween, §8.3,
+  schaltet `controls.enabled` ab und bewegt `camera.position` von aussen) meldet
+  `controls.update()` in **jedem Bild** eine Aenderung, ohne dass der Spieler die Kamera
+  angefasst haette. Wuerde sie mitgezaehlt, verschluckte der Verwurf jeden Tap waehrend eines
+  Refits und noch 80 ms danach — also nach jedem Levelstart, jedem Moduswechsel und jedem
+  Resize. `createPointerInput` MUSS die `controls` deshalb uebergeben bekommen; ohne sie ist die
+  Ausnahme nicht entscheidbar.
 * Hover-Raycast nur bei `matchMedia('(hover:hover) and (pointer:fine)')`, hoechstens einmal pro
   `requestAnimationFrame`, und nur wenn kein Pointer aktiv ist.
+
+Testgegenstand: §10.9 (`tests/render.test.js`) prueft alle fuenf Faelle einzeln — sauberer Tap,
+Wischen ueber der Schwelle, Zittern unter der Toleranz bei laufender Daempfung, Tap waehrend
+eines Refits, Schieben im Zwischenband mit und ohne Kamerabewegung.
 
 Begleitendes CSS:
 
@@ -2191,13 +2282,86 @@ Routen-Aenderung nicht die ganze Seite auf 404 setzt).
 `/styles/` bleibt es ohne Fingerprint bei `public, max-age=0, must-revalidate` plus ETag —
 sonst sehen wiederkehrende Spieler nach einem Deploy ein Jahr lang die alte Version.
 
+### 9.8 Einzeldatei-Fassung (`tools/build-artifact.js`)
+
+Neben der Cloudflare-Fassung gibt es eine **zweite Auslieferungsform**: eine einzige,
+netzunabhaengige HTML-Datei (`dist/pfeilspiel.html`), erzeugt ueber
+`npm run build:artifact` → `node tools/build-artifact.js [ziel.html]`.
+
+* **Das Repository bleibt buildfrei.** Die Zusage aus §9.1 gilt unveraendert: `public/` wird so
+  ausgeliefert, wie es dasteht, und laeuft ohne Werkzeug. Kein Modul, kein Stylesheet und keine
+  Testdatei DARF eine Verpackung voraussetzen. `tools/build-artifact.js` ist reines
+  Verpackungswerkzeug, liest die Quellen nur und schreibt ausschliesslich in sein Ziel. Es DARF NICHT Bestandteil des
+  Ladepfads der Cloudflare-Fassung werden.
+* **Verfahren:** die drei Stylesheets als `<style>`, der Koerper aus `public/index.html`
+  unveraendert; `three` als gekapselte CommonJS-Fassung (`node_modules/three/build/three.cjs`,
+  ohne jedes `require`) hinter einer Funktion, die das Objekt `THREE` liefert; `OrbitControls`
+  und `RoomEnvironment` von ES-Modul auf denselben Geltungsbereich umgeschrieben
+  (`import` → Destrukturierung aus `THREE`); die sieben Spielmodule in
+  Abhaengigkeitsreihenfolge verkettet, ihre gegenseitigen Importe entfallen.
+* Die Einzeldatei laedt **nichts** nach: keine Importmap, kein `<script src>`, kein
+  Stylesheet-Verweis, kein `vendor/`-Pfad, kein CDN. Sie MUSS vollstaendig offline laufen.
+* Ein **Namenskonflikt** zwischen zwei Modulen bricht den Bau ab, statt still ein kaputtes
+  Buendel zu schreiben. Ebenso ein uebrig gebliebener `import`/`export`.
+* Das Werkzeug fuehrt zwei Aufzaehlungen (`MODULE`, `STYLES`) und gleicht sie bei **jedem** Lauf
+  gegen `public/src/*.js` und `public/src/styles/*.css` ab. Eine dort neu angelegte Datei, die in
+  der Aufzaehlung fehlt — und umgekehrt —, bricht den Bau ab, statt stumm aus dem Erzeugnis zu
+  fallen.
+* **Keine Server-API.** In der Einzeldatei gibt es `/api/records` nicht. `getScores` und
+  `postScore` werden auf eine rein **oertliche Bestenliste** im `localStorage` des Spielers
+  umgelenkt (Schluessel `pfeilspiel.bestenliste.oertlich`, hoechstens 500 Zeilen, Sortierung wie
+  im Worker: wenige Zuege, dann kuerzere Zeit, dann `id`; `localStorage`-Ausfall im Privatmodus
+  bleibt fluechtig statt fehlerhaft). Der Ersatz wird zwischen `api.js` und `main.js` eingesetzt,
+  wo er beide Namen ueberschreiben kann. D1, Ratenbegrenzung, Namenspruefung und
+  Replay-Verifikation aus §9.2 bis §9.7 gelten ausschliesslich fuer die Cloudflare-Fassung. Eine
+  oertliche Liste ist unverifiziert und nicht vergleichbar; sie DARF NICHT als geteilte
+  Bestenliste ausgegeben oder in die D1-Tabelle uebernommen werden.
+* `dist/` ist gitignoriert; das Erzeugnis wird **nicht** versioniert. Frisch ist es per Definition
+  erst nach einem Neubau. Dass ein Neubau jederzeit genau den aktuellen Quellstand liefert, ist
+  Testgegenstand (§10.11) — der Test baut dafuer selbst, in ein eigenes Verzeichnis, und liest
+  `dist/` nicht an.
+
 ---
 
 ## 10. Teststrategie
 
-Ausfuehrung: `npm test` → `node --test tests/`. Die Tests laufen **ohne Browser und ohne WebGL**,
-weil `src/game.js` und `src/levels.js` reine Module sind. `tests/e2e.mjs` (Playwright) laeuft
-separat ueber `npm run e2e`.
+Ausfuehrung: `npm test` → `node --test tests/*.test.js`; gleichwertig `node --test tests/`. Beide
+Laufarten MUESSEN **dieselbe Menge** erfassen. Node loest ein Verzeichnis als Positionsargument
+von `--test` nicht als Suchraum auf, sondern ueber die Modulaufloesung: `node --test tests/` laedt
+genau `tests/index.js` und sonst nichts. Diese Datei DARF deshalb keine Importliste von Hand
+fuehren — sie liest ihr eigenes Verzeichnis (`readdirSync`, jede `*.test.js`, sortiert) und
+importiert dynamisch. Eine handgefuehrte Liste hat genau eine Fehlerform, und sie ist stumm: eine
+neue Testdatei laeuft unter `npm test` mit und unter `node --test tests/` nicht. Die
+Deckungsgleichheit beider Wege ist selbst Testgegenstand (§10.11).
+
+Die Tests laufen **ohne Browser und ohne WebGL**, weil `src/game.js` und `src/levels.js` reine
+Module sind; alles Weitere wird gegen Attrappen oder gegen den Quelltext geprueft. `tests/e2e.mjs`
+(Playwright) traegt bewusst **nicht** die Endung `.test.js` und laeuft separat ueber
+`npm run e2e`.
+
+**Der vollstaendige Bestand — jede Datei unter `tests/` ist hier genannt:**
+
+| Datei | Gegenstand | Abschnitt |
+|---|---|---|
+| `board.test.js` | Geometrie, Schritttabelle, Tiefen | §10.1 |
+| `rules.test.js` | Zugregel, RF-1 bis RF-12, Involution | §10.2 |
+| `generator.test.js` | Generator, Loesbarkeitsgarantie, Codes | §10.3 |
+| `verify.test.js` | Fuzz-Harness und Mutationstest | §10.4 |
+| `session.test.js` | Sitzung, Undo, Replay | §10.5 |
+| `worker.test.js` | Validierung und Namen, ohne Netzwerk | §10.6 |
+| `skins.test.js` | Tokensaetze, Audio, **Kontrastprobe** | §10.7 |
+| `css-tokens.test.js` | `tokens.css`, `base.css`, `fx.css` gegen die Skins | §10.7 |
+| `smoke.test.js` | Modulschnittstellen aus §4, Durchstich bis zum Sieg | §10.8 |
+| `render.test.js` | Zeigerlogik aus §8.7 (Tap, Zittern, Refit) | §10.9 |
+| `ui.test.js` | Overlaystapel aus §4.5 | §10.9 |
+| `api.test.js` | `src/api.js` gegen `fetch`-Attrappen | §10.10 |
+| `worker-api.test.js` | Anfragebearbeitung des Workers gegen D1-Attrappe | §10.10 |
+| `bundle.test.js` | Frischepruefung der Einzeldatei, Deckung beider Laufarten | §10.11 |
+| `index.js` | Sammeleinstieg, liest das Verzeichnis (keine Testdatei) | — |
+| `e2e.mjs` | Playwright, separat ueber `npm run e2e` | §10.12 |
+
+Eine neu angelegte Testdatei MUSS in dieser Tabelle auftauchen; eine hier genannte MUSS
+existieren.
 
 ### 10.1 `tests/board.test.js` — Geometrie
 
@@ -2329,8 +2493,118 @@ tatsaechlich auf der serialisierten Beschreibung arbeitet und nicht auf dem Gene
 4. `src/styles/base.css` enthaelt **keine** Hexfarbe (`/#[0-9a-fA-F]{3,8}\b/`) und keinen
    literalen `px`-Radius ausserhalb von `var()`. Dieser Grep-Test steht ab dem ersten Commit.
 5. `fx.canvasFilter` enthaelt ausschliesslich `saturate`/`contrast`, nie `drop-shadow` oder `blur`.
+6. **Kontrastprobe zu §7.1.** Nicht ein einzelnes Token wird geprueft, sondern **jedes**
+   Text-auf-Hintergrund-Paar, das `base.css` bildet, in **allen drei** Skins: `--ps-fg` und
+   `--ps-fg-muted` auf Seitengrund, Glaspanel, Knopfflaeche und `--ps-accent-soft`;
+   `--ps-success` und `--ps-danger` auf dem Glaspanel; `--ps-accent-fg` auf `--ps-accent` und
+   `--ps-accent-2`; `--ps-btn-fg` auf `--ps-btn-bg` und `--ps-btn-bg-hover`. Halbdeckende
+   Flaechen werden alphakompositiert, Glasgruende ueber `--ps-bg` **und** `--ps-bg-2` gerechnet.
+   Jedes Paar MUSS `>= 4,5:1` halten. Ein eigener Test haelt fest, dass die Paarliste die in
+   `base.css` vorkommenden Kombinationen vollstaendig abdeckt — sonst verkaeme die Probe still zu
+   einer Teilpruefung.
+7. **Regression gegen die behobenen Altwerte.** Jeder frueher ausgelieferte Wert
+   (`--ps-success` `#30D158`, `--ps-danger` `#FF3B30`, `--ps-accent` `#0A84FF`,
+   `--ps-accent-2` `#5AC8FA`) wird einzeln in eine Kopie der Apple-Tokens gesetzt; die Probe MUSS
+   ihn namentlich beanstanden. Damit kann kein Skin-Umbau die Kontrastkorrektur stumm
+   zurueckdrehen.
+8. Die Kontrasthilfen selbst (Alphakompositierung, Leuchtdichte, Verhaeltnis) werden gegen
+   bekannte WCAG-2.1-Werte geprueft (Schwarz auf Weiss = 21:1, Farbe auf sich selbst = 1:1).
 
-### 10.8 `tests/e2e.mjs` — Playwright
+### 10.8 `tests/smoke.test.js` — Modulschnittstellen und Durchstich
+
+1. Jedes Modul exportiert die in §4.1 bis §4.7 zugesagten Namen. `game.js` und `levels.js` werden
+   echt importiert (reine Module), die uebrigen fuenf gegen ihren Quelltext geprueft, damit der
+   Test ohne Browser laeuft.
+2. Jeder benannte Import in `main.js` existiert im Zielmodul; `main.js` ruft `boot()` selbst auf
+   und geht ueber den Pflichtpfad aus §0.5 (`verifyLevel` im Produktivcode).
+3. Durchstich ohne Browser: `levelSpecFor` → `buildBoard` → `generateLevel` → `verifyLevel` →
+   `createSession` → `tap` … bis zum Sieg, je einmal fuer beide Richtungs- und beide Zielmodi.
+
+### 10.9 `tests/render.test.js` und `tests/ui.test.js` — Eingabe und Overlaystapel
+
+`render.test.js` prueft ausschliesslich `createPointerInput` (§8.7) gegen einen winzigen
+Ereignisverteiler, eine `OrbitControls`-Attrappe und eine einzige antippbare Zelle. Laesst sich
+`three` nicht aufloesen, meldet sich die Datei als **uebersprungen**, nicht als rot.
+
+1. Sauberer Tap ohne Kamerabewegung loest `onTap` aus.
+2. Wischen ueber die Touch-Schwelle loest keinen Tap aus.
+3. Fingerzittern **unter** der halben Schwelle ueberlebt den Daempfungsnachlauf — der Fall, den
+   die Zittertoleranz aus §8.7 rettet.
+4. Ein Tap waehrend eines programmatischen Refits (`controls.enabled === false`, `change` in
+   jedem Bild) wird **nicht** verworfen.
+5. Bewusstes Schieben im Band zwischen halber und ganzer Schwelle wird bei frischer
+   Kamerabewegung verworfen — und ohne Kamerabewegung eben nicht.
+
+`ui.test.js` prueft die Overlaysteuerung aus §4.5 gegen ein minimales DOM-Modell (genau die
+Knoten und Methoden, die `createUI` benutzt), ohne Playwright:
+
+1. Sieg → Bestenliste → schliessen: der Siegdialog kommt samt Fokus zurueck.
+2. Nach diesem Umweg ist das Eintragen weiterhin moeglich (kein zerstoerter Dialogzustand).
+3. Die Bestenliste allein gibt den Fokus an ihren Ausloeser zurueck.
+4. `hideWin` waehrend der Bestenliste kappt den Rueckweg: der Siegdialog kehrt nicht wieder.
+5. Die Sackgasse ueberlebt einen Blick in die Bestenliste unveraendert.
+6. Zweimal dasselbe Overlay oeffnen legt keinen Kreis im Stapel an.
+
+### 10.10 `tests/api.test.js` und `tests/worker-api.test.js` — Anfragebearbeitung
+
+Beide Dateien laufen **ohne Netzwerk, ohne `wrangler` und ohne neue Abhaengigkeit**, gegen
+Attrappen, die im Test selbst stehen.
+
+`worker-api.test.js` deckt `worker/index.js` und `worker/api-records.js` ab. Die D1-Attrappe
+schreibt jede abgesetzte SQL-Zeichenkette samt Bindungen mit; dazu kommen eine `ASSETS`-Attrappe
+und ein `caches.default`-Ersatz, der nur fuer den Cache-Test gestellt wird.
+
+1. Die JSON-Form aus §9.3 samt `Cache-Control`; `limit`/`offset` als **Bindungen**, Rang als
+   `offset+i+1`; Filter `dir`/`goal`/`size`; `bestPerName` ueber `ROW_NUMBER() OVER (PARTITION BY
+   name_key)`.
+2. `400 validation` mit Feldnamen **ohne jeden D1-Zugriff**; `HEAD` wie `GET`; `405` mit `Allow`;
+   `OPTIONS` als `204`; Origin-Echo nur fuer gelistete Origins, `Vary: Origin` immer (§9.7).
+3. Der Kantenspeicher: kanonisierter Schluessel, Treffer ohne D1-Zugriff.
+4. Ein gueltiger POST als `201` mit allen 24 INSERT-Bindungen in der richtigen Reihenfolge —
+   einschliesslich des Nachweises, dass **nur** der gehashte, nie der rohe IP-Wert gespeichert
+   wird. Idempotenz: derselbe `runId` liefert `200`, `duplicate:true` und dieselbe `id`.
+5. Fehlerpfade als saubere Antworten statt als `500`: kaputtes JSON, leerer Rumpf, Array, `null`;
+   `413` per `Content-Length` **und** per Messung; `429` mit `Retry-After` und `retryAfterSec`;
+   fehlendes `IP_SALT` als verstaendliche `500`, die den Namen des Geheimnisses nicht nennt und
+   nichts schreibt; D1-Ausnahmen ohne Innenansicht im Klartext.
+6. **SQL-Hygiene** ueber alle in einem Durchlauf beobachteten Befehle: kein Nutzerwert (Name,
+   `runId`, `clientId`, `levelCode`, Modi, Groesse, IP) steht als Text im SQL, und die Zahl der
+   Platzhalter stimmt in jedem Befehl exakt mit der Zahl der Bindungen ueberein.
+
+`api.test.js` deckt `public/src/api.js` gegen `fetch`-, `navigator`-, `localStorage`- und
+`crypto`-Attrappen ab: feste Parameterreihenfolge der Abfragezeichenkette; die vollstaendige
+Fehlerabbildung (Fehlercode des Servers schlaegt HTTP-Status, `ok:false` ist auch bei `200` ein
+Fehler); `retryAfterSec` aus Rumpf vor Kopfzeile; `network`, `timeout`, `aborted`, `offline`,
+`unsupported`; die Allowlist von `postScore` samt Opfern der Tippfolge bei zu grossem Rumpf;
+`newUuid` mit und ohne `crypto.randomUUID`; die `localStorage`-Kapselung von `clientId()` in
+fuenf Faellen. Jeder Fehlerfall MUSS eine vollstaendige Huelle mit nichtleerem deutschem
+Klartext tragen.
+
+### 10.11 `tests/bundle.test.js` — Frischepruefung der Einzeldatei
+
+Zwei Dinge koennen still veralten, ohne dass ein anderer Test es merkt: das gitignorierte
+Erzeugnis aus §9.8 und der Testlauf selbst.
+
+1. Der Test **baut im Testlauf selbst** — `tools/build-artifact.js` in ein frisches Verzeichnis
+   unter `os.tmpdir()`, ohne Netz. Er liest `dist/` **nicht** und schreibt nicht dorthin: er
+   sichert nicht die Frische einer fremden Datei zu, sondern dass ein Neubau jederzeit den
+   aktuellen Quellstand liefert.
+2. Das Erzeugnis traegt keine unaufgeloeste `import`-/`export`-Zeile und kein CSS-`@import`;
+   `three` steckt eingebettet (`THREE`-Kapsel, `OrbitControls`, `RoomEnvironment`, kein
+   `require`); es wird nichts nachgeladen (kein Skriptverweis, keine Importmap, kein
+   `vendor/`-Pfad).
+3. Alle sieben Spielmodule sind eingesetzt, die Modulmenge deckt sich **exakt** mit
+   `public/src/*.js`, `main.js` steht am Ende, und die oertliche Bestenliste steht zwischen
+   `api.js` und `main.js`, wo sie ueberhaupt wirken kann.
+4. **Zeilenweise Frischepruefung** ueber alle zehn Dateien unter `public/src/` (sieben Module,
+   drei Stylesheets) und den Koerper aus `public/index.html`: jede nicht triviale Quellzeile MUSS
+   sich — unter Nachvollzug der Umschreibungen des Werkzeugs — im Erzeugnis wiederfinden. Eine
+   Negativprobe verbiegt eine einzige Zeile und verlangt, dass die Pruefung anschlaegt.
+5. **Deckung beider Laufarten:** `tests/index.js` MUSS sein Verzeichnis lesen und DARF KEINE
+   einzelnen `import './x.test.js'`-Zeilen fuehren; `package.json` → `scripts.test` MUSS das
+   ganze Testverzeichnis erfassen. Damit kann keine Testdatei aus einem der beiden Wege fallen.
+
+### 10.12 `tests/e2e.mjs` — Playwright
 
 1. Level laden, `witness` per JS-Bridge abspielen, Sieg-Overlay erscheint, Zugzaehler `=== par`.
 2. Tippen gegen Ziehen: ein simulierter Drag von 40 px loest **keinen** Zug aus; ein Tap
@@ -2343,7 +2617,7 @@ tatsaechlich auf der serialisierten Beschreibung arbeitet und nicht auf dem Gene
 7. `?debug=arrows`: Turm mit allen sechs Richtungen; visuelle Referenz fuer die
    UV-Drehrichtung (§8.5).
 
-### 10.9 Abnahmekriterien
+### 10.13 Abnahmekriterien
 
 Ein Release ist abnahmefaehig, wenn:
 
@@ -2352,7 +2626,10 @@ Ein Release ist abnahmefaehig, wenn:
   in **100 %** der Faelle liefert,
 * der Mutationstest aus §10.4 alle fuenf Verfaelschungen ablehnt,
 * `capacity()` im Worker und `buildBoard().C` fuer alle Dimensionen uebereinstimmen,
-* der Leak-Test aus §10.8 besteht,
+* die Kontrastprobe aus §10.7 fuer alle drei Skins ohne Beanstandung durchlaeuft und die
+  Regression gegen die behobenen Altwerte anschlaegt,
+* `npm run build:artifact` durchlaeuft und die Frischepruefung aus §10.11 gruen ist,
+* der Leak-Test aus §10.12 besteht,
 * die visuelle Pfeilkontrolle unter `?debug=arrows` in beiden Modi korrekt ist.
 
 ---

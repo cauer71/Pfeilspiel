@@ -57,6 +57,9 @@ export const SKINS = {
       cubeLow: { roughness: 0.68, transmission: 0, opacity: 1 },
       target: { color: '#4ADE80', emissive: 0x0F3D24, emissiveIntensity: 0.60 },
       hover: { emissive: 0x5B8CFF, emissiveIntensity: 0.22 },
+      // Ungueltig-Blitz (SPEC §8.7). Eigener Wert, weil --ps-danger als Textfarbe auf
+      // 4,5:1 abgedunkelt sein kann; der Blitz darf davon nicht stumpf werden.
+      flash: { emissive: 0xE2564A, emissiveIntensity: 0.90 },
       ghost: { opacity: 0.16 },
       coreBox: { color: 0x0E1116, opacity: 1.0 },
       atlas: {
@@ -111,12 +114,20 @@ export const SKINS = {
       '--ps-panel-shadow': '0 10px 34px rgba(16,24,40,.10), 0 1px 2px rgba(16,24,40,.06)',
       '--ps-panel-radius': '22px',
       '--ps-fg': '#1C1C1E', '--ps-fg-muted': '#5A5A5F',
-      '--ps-accent': '#0A84FF', '--ps-accent-2': '#5AC8FA',
+      // Weisse Beschriftung auf .ps-btn-primary ("Eintragen", "Weiter", also Normaltext):
+      // #0A84FF trug nur 3,65:1, das hellcyane #5AC8FA im :hover sogar 1,90:1. #0071E3
+      // (4,70:1) bleibt das freundliche Blau der Apple-Oberflaechen, #005FCC (5,98:1) ist
+      // die uebliche Abdunklung fuer den Hover. Das leuchtende #0A84FF steckt weiterhin
+      // in three.hover.emissive und three.atlas.accent, das Bild bleibt also unveraendert.
+      '--ps-accent': '#0071E3', '--ps-accent-2': '#005FCC',
       '--ps-accent-soft': 'rgba(10,132,255,.12)', '--ps-accent-fg': '#FFFFFF',
       // #30D158 stand auf dem hellen Glaspanel (effektiv rgb(250,251,252)) nur bei 1,95:1;
       // .ps-note.is-ok ist mit .9em Normaltext und braucht 4,5:1. #1C7C3C liefert 5,07:1
       // ueber dem Panel und 5,25:1 ueber reinem Weiss, also auch hinter backdrop-filter.
-      '--ps-success': '#1C7C3C', '--ps-danger': '#FF3B30',
+      // Dasselbe gilt fuer .ps-note.is-error und .ps-toast.is-error: #FF3B30 kam nur auf
+      // 3,42:1, #D70015 auf 5,19:1 (5,38:1 ueber Weiss). Der Ungueltig-Blitz behaelt sein
+      // sattes Rot ueber three.flash.emissive, er haengt nicht mehr an --ps-danger.
+      '--ps-success': '#1C7C3C', '--ps-danger': '#D70015',
       '--ps-btn-bg': 'rgba(255,255,255,.75)', '--ps-btn-bg-hover': 'rgba(255,255,255,.94)',
       '--ps-btn-fg': '#1C1C1E', '--ps-btn-border': '1px solid rgba(255,255,255,.85)',
       '--ps-btn-radius': '18px', '--ps-btn-press': 'scale(.96)',
@@ -144,6 +155,7 @@ export const SKINS = {
       cubeLow: { roughness: 0.32, transmission: 0, opacity: 0.96 },
       target: { color: '#34C759', emissive: 0x134A25, emissiveIntensity: 0.25 },
       hover: { emissive: 0x0A84FF, emissiveIntensity: 0.12 },
+      flash: { emissive: 0xFF3B30, emissiveIntensity: 0.90 },
       ghost: { opacity: 0.14 },
       coreBox: { color: 0xD9E1EB, opacity: 1.0 },
       atlas: {
@@ -229,6 +241,7 @@ export const SKINS = {
       cubeLow: { roughness: 1.0, transmission: 0, opacity: 1 },
       target: { color: '#39FF14', emissive: 0x1B4D0C, emissiveIntensity: 1.60 },
       hover: { emissive: 0xFF2E88, emissiveIntensity: 0.50 },
+      flash: { emissive: 0xFF3131, emissiveIntensity: 0.90 },
       ghost: { opacity: 0.18 },
       coreBox: { color: 0x05070A, opacity: 1.0 },
       atlas: {
