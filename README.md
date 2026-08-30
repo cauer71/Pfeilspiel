@@ -79,8 +79,10 @@ npm run serve        # http://localhost:8787
 ## Tests
 
 ```bash
-npm test             # 126 Node-Tests: Geometrie, Zugregel, Generator, Verifikation,
-                     # Sitzung, Worker-Validierung, Skins, CSS-Tokens, Rauchtest
+npm test             # 217 Node-Tests: Geometrie, Zugregel, Generator, Verifikation,
+                     # Sitzung, Zeigereingabe, Overlays, Skins samt Kontrastproben,
+                     # Worker-Validierung und -Anfragebearbeitung, API-Klient,
+                     # Einzeldatei-Frischeprüfung, Rauchtest
 npm run e2e          # 31 Prüfungen im echten Browser (Playwright + Chromium)
 ```
 
@@ -89,7 +91,7 @@ Der E2E-Lauf legt Bildschirmfotos aller drei Skins und beider Modi unter `test-r
 ## Einzeldatei-Fassung
 
 ```bash
-node tools/build-artifact.js
+npm run build:artifact
 ```
 
 Erzeugt `dist/pfeilspiel.html` — das komplette Spiel in einer netzunabhängigen HTML-Datei
