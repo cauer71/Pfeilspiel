@@ -1,0 +1,15 @@
+{
+  "name": "pfeilspiel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pfeilspiel - 3D-Browsergame mit Halma-Zugregel, laeuft als Cloudflare Worker",
+  "scripts": {
+    "test": "node --test tests/",
+    "serve": "node tools/serve.js",
+    "e2e": "node tests/e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
