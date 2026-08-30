@@ -1,8 +1,10 @@
 # Pfeilspiel
 
-Ein dreidimensionales Denkspiel im Browser: ein Turm aus weißen Würfeln, jeder mit einem
-schwarzen Pfeil. Ein Tipp bewegt den Würfel in seine Pfeilrichtung — einen Schritt, oder als
-Halma-Sprung über einen Nachbarn hinweg. Der Turm lässt sich frei drehen und zoomen.
+Ein dreidimensionales Denkspiel im Browser: ein Turm aus weißen Steinen, jeder mit einem
+schwarzen Pfeil. Ein Tipp schickt den Stein in seine Pfeilrichtung — bei freier Bahn gleich
+ganz aus dem Turm, sonst einen Schritt weit oder als Halma-Sprung über einen Nachbarn hinweg.
+Neben einzelnen Würfeln gibt es längliche Steine, die zwei Felder belegen. Der Turm lässt sich
+frei drehen und zoomen.
 
 Kein Build-Schritt, keine Laufzeitabhängigkeiten, reines ES-Modul-JavaScript.
 Three.js liegt selbst gehostet im Repository.
@@ -11,19 +13,25 @@ Three.js liegt selbst gehostet im Repository.
 
 ## Spielregeln
 
-Sei `A` die Zelle des angetippten Würfels, `d` seine feste Richtung.
+Ein **Stein** belegt ein Feld (1×1) oder zwei benachbarte Felder (2×1) und trägt genau eine
+feste Richtung `d`. Er bewegt sich immer als Ganzes.
 
 | | Regel |
 |---|---|
-| **Schritt** | `A+d` liegt im Gitter und ist frei → der Würfel rückt ein Feld vor. Ein Schritt kettet nie. |
-| **Sprung** | `A+d` besetzt, `A+2d` im Gitter und frei → Sprung darüber hinweg. |
-| **Kette** | Nach einem Sprung geht es weiter, solange von der aktuellen Zelle aus wieder gesprungen werden kann. Die Kette ist zwingend. |
-| **Ungültig** | Weder Schritt noch Sprung möglich → kein Zug, nur eine Wackelanimation. |
-| **Austritt** | Verlässt der Würfel das Gitter, fliegt er weg und ist aus dem Spiel. |
+| **Rutschen** | Die Bahn in Pfeilrichtung ist bis zum Rand frei → der Stein verlässt den Turm sofort ganz. |
+| **Schritt** | Das nächste Feld ist frei, die Bahn danach verstellt → der Stein rückt genau ein Feld vor. Ein Schritt kettet nie. |
+| **Sprung** | Das nächste Feld ist besetzt, das Feld dahinter frei → Sprung darüber hinweg. |
+| **Kette** | Nach einem Sprung geht es weiter, solange von der aktuellen Lage aus wieder gesprungen werden kann. Die Kette ist zwingend. |
+| **Ungültig** | Weder das eine noch das andere möglich → kein Zug, nur eine Wackelanimation. |
+| **Austritt** | Verlässt der Stein das Gitter, fliegt er weg. Halb draußen bleibt nie einer stehen. |
 
-Es gibt **keine Schwerkraft**: verbleibende Würfel schweben an Ort und Stelle.
-Ein Zug verändert genau einen Würfel, übersprungene bleiben unberührt — deshalb ist
-Rückgängig exakt invers und beliebig tief.
+Ein 2×1-Stein braucht **alle** Zielfelder frei, blockiert entsprechend zwei Felder und kann
+sich nicht selbst im Weg stehen: beim Zug längs seiner eigenen Achse zählt die Zelle, die er
+gerade verlässt, als frei.
+
+Es gibt **keine Schwerkraft**: verbleibende Steine schweben an Ort und Stelle.
+Ein Zug verändert genau einen Stein und lässt seine Form unverändert, übersprungene bleiben
+unberührt — deshalb ist Rückgängig exakt invers und beliebig tief.
 
 ### Richtungsmodi
 
@@ -35,8 +43,8 @@ Rückgängig exakt invers und beliebig tief.
 
 ### Zielmodi
 
-* **Abbau** — alle Würfel müssen heraus.
-* **Befreiung** — nur der grüne Zielwürfel muss heraus, der Restturm bleibt stehen.
+* **Abbau** — alle Steine müssen heraus.
+* **Befreiung** — nur der grüne Zielstein muss heraus, der Restturm bleibt stehen.
 
 ### Levels
 

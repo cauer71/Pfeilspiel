@@ -743,6 +743,23 @@ export function buildVariant(dirWorld, rowFromTop) {
 }
 
 /**
+ * Eine Wuerfelgeometrie ganz ohne Pfeil. Sie bildet die zweite Haelfte eines 2x1-Steins:
+ * der Stein traegt dadurch GENAU EINEN Pfeil und liest sich als ein laenglicher Klotz,
+ * nicht als zwei zufaellig aneinanderliegende Wuerfel (SPEC §8.5.1).
+ * @param {number} rowFromTop Atlaszeile von oben (ROW.*)
+ * @returns {THREE.BufferGeometry}
+ */
+export function buildPlainVariant(rowFromTop) {
+  const g = new THREE.BoxGeometry(CUBE_EDGE, CUBE_EDGE, CUBE_EDGE);
+  const uv = g.getAttribute('uv');
+  for (let f = 0; f < 6; f++) writeFaceUV(uv, f, TILE.PLAIN, rowFromTop, 0);
+  uv.needsUpdate = true;
+  g.clearGroups();
+  g.addGroup(0, 36, 0);
+  return g;
+}
+
+/**
  * Die 12 Turmvarianten: 6 Weltrichtungen x {NORMAL, TARGET} (SPEC §8.5).
  * Schluessel `${dirWorldKey}|${rowFromTop}`.
  * @param {'FASSADE'|'VOLUMEN'} mode
@@ -1181,6 +1198,14 @@ export function createTowerView(ctx) {
     return g;
   }
 
+  /** Pfeillose Haelfte eines 2x1-Steins, je Atlaszeile einmal gebaut. */
+  function plainVariantFor(row) {
+    const key = 'PLAIN|' + row;
+    let g = variants.get(key);
+    if (!g) { g = buildPlainVariant(row); variants.set(key, g); }
+    return g;
+  }
+
   function worldOf(cell) {
     worldPosOf(board, cell, scratch);
     return new THREE.Vector3(scratch[0], scratch[1], scratch[2]);
@@ -1255,8 +1280,10 @@ export function createTowerView(ctx) {
           1 + (streck - 1) * Math.abs(ev.z));
 
         traeger = new THREE.Group();
+        const blank = plainVariantFor(row);
         for (const seite of [-1, 1]) {
-          const teil = new THREE.Mesh(geo, mats.base);
+          // Nur die Ankerhaelfte traegt den Pfeil; die zweite bleibt blank.
+          const teil = new THREE.Mesh(seite === -1 ? geo : blank, mats.base);
           teil.position.copy(ev).multiplyScalar(seite * halb * 0.5);
           teil.scale.copy(skala);
           teil.matrixAutoUpdate = false;
