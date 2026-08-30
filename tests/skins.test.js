@@ -562,3 +562,67 @@ test('createAudio bleibt ohne WebAudio und ohne Nutzergeste stumm', async () => 
   audio.dispose();
   assert.doesNotThrow(() => audio.play('win'));
 });
+
+// --- Kontrast ------------------------------------------------------------
+// Regression: Apple trug '--ps-success': '#30D158'. base.css faerbt damit
+// `.ps-note.is-ok` (font-size .9em, also Normaltext) in einem Panel aus
+// --ps-panel-bg ueber --ps-bg — auf Apple effektiv rgb(250,251,252). Das ergab
+// 1,95:1 statt der geforderten 4,5:1. Die Panels tragen backdrop-filter, hinter
+// dem Glas kann statt --ps-bg auch die helle Szene bis hin zu weissen Wuerfeln
+// stehen; darum wird zusaetzlich gegen --ps-bg-2 geprueft (Apple: #FFFFFF).
+
+/** '#RRGGBB' oder 'rgb(a)(…)' zu [r,g,b,a] mit 0..255 bzw. 0..1. */
+function parseColor(value) {
+  const hex = /^#([0-9a-fA-F]{6})$/.exec(String(value).trim());
+  if (hex) {
+    const n = parseInt(hex[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
+  }
+  const fn = /^rgba?\(([^)]+)\)$/.exec(String(value).trim());
+  assert.ok(fn, 'unlesbare Farbe: ' + value);
+  const p = fn[1].split(',').map((s) => Number(s.trim()));
+  assert.ok(p.length === 3 || p.length === 4, 'unlesbare Farbe: ' + value);
+  return [p[0], p[1], p[2], p.length === 4 ? p[3] : 1];
+}
+
+/** Alphakompositierung von `fg` ueber dem deckenden `bg`. */
+function composite(fg, bg) {
+  return [0, 1, 2].map((i) => fg[i] * fg[3] + bg[i] * (1 - fg[3]));
+}
+
+/** Relative Leuchtdichte nach WCAG 2.1. */
+function luminance(rgb) {
+  const lin = rgb.slice(0, 3).map((c) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+}
+
+/** Kontrastverhaeltnis nach WCAG 2.1; 1 bis 21. */
+function contrast(a, b) {
+  const la = luminance(a), lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+test('Kontrasthilfen rechnen wie WCAG 2.1', () => {
+  assert.equal(Math.round(contrast(parseColor('#000000'), parseColor('#FFFFFF'))), 21);
+  assert.equal(contrast(parseColor('#777777'), parseColor('#777777')), 1);
+  // Halbdeckendes Weiss ueber #F4F5F7 ergibt den Apple-Panelgrund.
+  assert.deepEqual(
+    composite(parseColor('rgba(255,255,255,.58)'), parseColor('#F4F5F7')).map(Math.round),
+    [250, 251, 252]);
+});
+
+test('--ps-success bleibt auf dem Panelgrund lesbar (4,5:1 fuer .ps-note.is-ok)', () => {
+  for (const skin of skins()) {
+    const panel = parseColor(skin.css['--ps-panel-bg']);
+    for (const key of ['--ps-bg', '--ps-bg-2']) {
+      const grund = composite(panel, parseColor(skin.css[key]));
+      const ratio = contrast(parseColor(skin.css['--ps-success']), grund);
+      assert.ok(ratio >= 4.5,
+        skin.id + ': --ps-success ' + skin.css['--ps-success'] + ' auf Panel ueber ' + key
+        + ' nur ' + ratio.toFixed(2) + ':1, gefordert 4,5:1');
+    }
+  }
+});

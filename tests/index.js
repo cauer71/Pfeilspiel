@@ -15,4 +15,6 @@ import './session.test.js';
 import './skins.test.js';
 import './css-tokens.test.js';
 import './worker.test.js';
+import './render.test.js';
+import './ui.test.js';
 import './smoke.test.js';

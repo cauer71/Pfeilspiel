@@ -1760,8 +1760,11 @@ export function createPointerInput(opts) {
     }
     if (e.pointerId !== downId) return;
     const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
-    if (dist > 0) movedAny = true;
     const lim = e.pointerType === 'mouse' ? moveMouse : moveTouch;
+    // Zittertoleranz: erst eine halbe Tap-Schwelle gilt als bewusstes Wischen.
+    // Bei `dist > 0` haette jeder Fingertipper movedAny gesetzt und waere damit
+    // in den Daempfungs-Verwurf weiter unten gelaufen (SPEC §8.7).
+    if (dist > lim * 0.5) movedAny = true;
     // Einmal absolut gegen den Startpunkt gemessen; moved bleibt gesetzt.
     if (!moved && dist > lim) {
       moved = true;
@@ -1811,7 +1814,14 @@ export function createPointerInput(opts) {
     if (hoverCell !== -1 && opts.onHover) { hoverCell = -1; opts.onHover(null); }
   }
 
-  function onCameraChange() { lastCameraChange = now(); }
+  function onCameraChange() {
+    // Nur nutzergetriebene Kamerabewegung zaehlt. Waehrend eines programmatischen
+    // Refits (fitCamera schaltet controls.enabled ab und bewegt camera.position
+    // von aussen) meldet controls.update() in jedem Bild eine Aenderung; wuerde
+    // die mitgezaehlt, verschluckte der Verwurf unten jeden Tap im Refit.
+    if (opts.controls && opts.controls.enabled === false) return;
+    lastCameraChange = now();
+  }
 
   const P = { passive: true };
   canvas.addEventListener('pointerdown', onDown, P);

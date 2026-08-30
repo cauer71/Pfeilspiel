@@ -113,7 +113,10 @@ export const SKINS = {
       '--ps-fg': '#1C1C1E', '--ps-fg-muted': '#5A5A5F',
       '--ps-accent': '#0A84FF', '--ps-accent-2': '#5AC8FA',
       '--ps-accent-soft': 'rgba(10,132,255,.12)', '--ps-accent-fg': '#FFFFFF',
-      '--ps-success': '#30D158', '--ps-danger': '#FF3B30',
+      // #30D158 stand auf dem hellen Glaspanel (effektiv rgb(250,251,252)) nur bei 1,95:1;
+      // .ps-note.is-ok ist mit .9em Normaltext und braucht 4,5:1. #1C7C3C liefert 5,07:1
+      // ueber dem Panel und 5,25:1 ueber reinem Weiss, also auch hinter backdrop-filter.
+      '--ps-success': '#1C7C3C', '--ps-danger': '#FF3B30',
       '--ps-btn-bg': 'rgba(255,255,255,.75)', '--ps-btn-bg-hover': 'rgba(255,255,255,.94)',
       '--ps-btn-fg': '#1C1C1E', '--ps-btn-border': '1px solid rgba(255,255,255,.85)',
       '--ps-btn-radius': '18px', '--ps-btn-press': 'scale(.96)',

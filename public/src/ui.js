@@ -293,17 +293,31 @@ export function createUI(handlers) {
 
   // --- Overlaysteuerung -------------------------------------------------
 
-  /** @type {{node: HTMLElement, zurueck: Element|null, escape: boolean}|null} */
+  /**
+   * Das oberste offene Overlay. `vorher` haelt den Rueckweg zu dem Overlay,
+   * das dafuer verdeckt wurde (Sieg -> Bestenliste -> zurueck zum Sieg).
+   * @type {{node: HTMLElement, zurueck: Element|null, escape: boolean,
+   *         vorher: object|null}|null}
+   */
   let offen = null;
 
   function oeffne(node, opt) {
     if (!node) return;
     const o = opt || {};
-    if (offen && offen.node !== node) schliesse(offen.node);
+    let vorher = null;
+    if (offen) {
+      // Das bisherige Overlay wird nur verdeckt, nicht geschlossen: beim
+      // Schliessen des neuen kommt es samt Fokus zurueck. Liegt node schon
+      // im Rueckweg, wird stattdessen alles darueber geschlossen (kein Kreis).
+      let e = offen;
+      while (e && e.node !== node) { e.node.hidden = true; e = e.vorher; }
+      vorher = e ? e.vorher : offen;
+    }
     offen = {
       node,
       zurueck: doc.activeElement instanceof HTMLElement ? doc.activeElement : null,
-      escape: o.escape !== false
+      escape: o.escape !== false,
+      vorher
     };
     node.hidden = false;
     const ziel = o.fokus && !o.fokus.disabled
@@ -313,14 +327,29 @@ export function createUI(handlers) {
   }
 
   function schliesse(node) {
-    if (!node || node.hidden) return;
-    node.hidden = true;
-    if (offen && offen.node === node) {
-      const zurueck = offen.zurueck;
-      offen = null;
-      if (zurueck && typeof zurueck.focus === 'function' && doc.contains(zurueck)) {
-        zurueck.focus();
+    if (!node) return;
+    if (offen && offen.node !== node) {
+      // Ein verdecktes Overlay schliessen (etwa hideWin(), waehrend die
+      // Bestenliste davorliegt): nur den Rueckweg dorthin kappen.
+      for (let e = offen; e; e = e.vorher) {
+        if (e.vorher && e.vorher.node === node) {
+          e.vorher.node.hidden = true;
+          e.vorher = e.vorher.vorher;
+          break;
+        }
       }
+    }
+    if (node.hidden) return;
+    node.hidden = true;
+    if (!offen || offen.node !== node) return;
+    const zurueck = offen.zurueck;
+    offen = offen.vorher;
+    if (offen) offen.node.hidden = false;
+    if (zurueck && typeof zurueck.focus === 'function' && doc.contains(zurueck)) {
+      zurueck.focus();
+    } else if (offen) {
+      const ziel = offen.node.querySelector(FOKUS_SELEKTOR);
+      if (ziel && typeof ziel.focus === 'function') ziel.focus();
     }
   }
 
