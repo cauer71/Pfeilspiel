@@ -706,6 +706,10 @@ export function createAudio(): SkinAudio;
 
 ```js
 export const TEXTE: Record<string, string>;        // ALLE deutschen UI-Strings, ein Ort
+//   Die Einstellungsschublade MUSS eine eigene Schliessen-Taste tragen ("Fertig",
+//   #ps-btn-settings-ok). Auf dem Telefon liegt sie ueber dem halben Bild; der Weg zurueck
+//   muss dort sein, wo der Daumen gerade ist, nicht nur in der Kopfzeile. Escape schliesst
+//   sie ebenfalls, aber nur wenn kein Overlay darueber liegt.
 export function createUI(handlers: {
   onNew, onUndo, onRestart, onSkin, onMode, onGoal, onLevel,
   onSubmitScore, onShowBoard, onXray, onSpeed, onMute
@@ -1882,33 +1886,42 @@ herausziehen.
 
 #### 8.5.1 Darstellung eines 2x1-Steins
 
-Ein 2x1-Stein ist **ein einziges Mesh**, kein Paar aus zwei Wuerfeln. Seine BoxGeometry misst
-entlang der Auslegerachse `CELL + CUBE_EDGE`, quer dazu `CUBE_EDGE`:
+Ein 2x1-Stein wird aus **drei** Teilen in einer `THREE.Group` gebaut:
 
 ```
-lang = CELL + CUBE_EDGE                     // 1.92
-BoxGeometry(ex ? lang : CUBE_EDGE, ey ? lang : CUBE_EDGE, ez ? lang : CUBE_EDGE)
-mesh.position = worldPos(anker) + ev * CELL/2      // Mittelpunkt zwischen beiden Zellen
+Mitte:      Wuerfel CUBE_EDGE^3 mit der regulaeren Variante (traegt den Pfeil)
+Endstuecke: zwei Boxen der Laenge CELL/2 entlang der Auslegerachse, quer CUBE_EDGE
+            Position ±(CUBE_EDGE + CELL/2)/2 entlang des Auslegers
+Gruppe:     position = worldPos(anker) + ev * CELL/2      // Mittelpunkt des Steins
 ```
 
-Die UV-Umschreibung aus §8.5 bleibt unveraendert: `writeFaceUV` spannt die Atlaskachel ueber
-die ganze Flaeche. Auf den langen Flaechen wird der Pfeil dadurch gestreckt und liegt sichtbar
-ueber **beiden** Zellen.
+Gesamtlaenge `CUBE_EDGE + 2·(CELL/2) = CELL + CUBE_EDGE`; der Stein reicht damit lueckenlos
+ueber beide Zellen.
 
-**Das ist kein kosmetisches Detail, sondern eine Spielanforderung.** Ein 2x1-Stein braucht
-seine Bahn auf beiden Spuren frei (§1.2). Traegt er nur auf einer Haelfte einen Pfeil oder
-zerfaellt er optisch in zwei Wuerfel, prueft der Spieler nur eine Spur, tippt und bekommt einen
-ungueltigen Zug, den er sich nicht erklaeren kann. Frueher gebaute Varianten (zwei Haelften mit
-je einem Pfeil; eine Haelfte blank) sind aus genau diesem Grund verworfen.
+**Der Pfeil bleibt genau so gross wie auf jedem anderen Stein** und sitzt mittig auf der langen
+Seite — er wird nicht mitgestreckt. Das ist der Grund fuer die Dreiteilung: eine einzige
+laengliche Box wuerde die Atlaskachel ueber die ganze Flaeche spannen und den Pfeil auf die
+doppelte Laenge ziehen.
 
-Der Meshursprung liegt im **Mittelpunkt des Steins**, nicht auf der Ankerzelle. Jede
-Zielposition einer Animation MUSS diesen Versatz mitfuehren (`cube.offset`). Als Trefferzelle
-gilt stets der Anker; die Regel liefert von beiden Zellen aus denselben Zug, ein Tipp auf die
-zweite Haelfte wirkt also gleich.
+`buildCapVariant(dirWorld, rowFromTop, extWorld)` baut die Endstuecke. Auf ihren **langen
+Flanken** steht die Kachel `TILE.PLAIN`; nur die beiden quadratischen **Stirnflaechen**
+(senkrecht zur Auslegerachse) tragen die regulaere Kachel nach derselben Fallunterscheidung wie
+`buildVariant` — `TIP`, `TAIL` oder `ARROW` mit `inPlaneRotation`. Von vorn und hinten sieht der
+lange Stein damit aus wie jeder andere.
 
-`buildVariant(dirWorld, rowFromTop, extWorld)` nimmt den Ausleger als dritten Parameter;
-`extWorld === undefined` liefert den Wuerfel. Der Variantenschluessel lautet
-`${dirWorldKey}|${row}|${extWorldKey ?? '-'}`.
+**Warum ueberhaupt so viel Aufwand.** Ein 2x1-Stein braucht seine Bahn auf beiden Spuren frei
+(§1.2). Zerfaellt er optisch in zwei Wuerfel oder traegt er nur auf einer Haelfte einen Pfeil,
+prueft der Spieler nur eine Spur, tippt und bekommt einen ungueltigen Zug, den er sich nicht
+erklaeren kann. Verworfene Bauformen, jeweils aus diesem Grund: zwei Haelften mit je einem
+Pfeil (liest sich als zwei Wuerfel); eine Haelfte blank (die blanke Spur wird uebersehen); eine
+einzige lange Box (Pfeil auf doppelte Groesse gestreckt).
+
+Der Gruppenursprung liegt im **Mittelpunkt des Steins**, nicht auf der Ankerzelle. Jede
+Zielposition einer Animation MUSS diesen Versatz mitfuehren (`cube.offset`). Material,
+Schattenflags und die Auswahlebene werden auf den **Teilen** gesetzt (`cube.parts`), nicht auf
+der Gruppe: `THREE.Group` kennt kein `material`, und der Raycaster prueft die Ebenen je Objekt.
+Als Trefferzelle traegt **jedes** Teil den Anker, ein Tipp auf ein Endstueck wirkt also wie
+einer auf die Mitte.
 
 ### 8.6 Sichtbarkeit
 

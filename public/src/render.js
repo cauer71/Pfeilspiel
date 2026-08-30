@@ -727,22 +727,52 @@ function writeFaceUV(uv, f, col, rowFromTop, rot) {
  * @param {number} rowFromTop Atlaszeile von oben (ROW.*)
  * @returns {THREE.BufferGeometry}
  */
-export function buildVariant(dirWorld, rowFromTop, extWorld) {
-  // Ein 2x1-Stein ist EIN laenglicher Koerper, kein Paar aus zwei Wuerfeln: entlang der
-  // Auslegerachse misst er CELL + CUBE_EDGE, quer dazu wie ein Wuerfel. Die Kachel des
-  // Atlas spannt sich dabei ueber die ganze lange Flaeche - der Pfeil wird also lang
-  // gezogen und liegt sichtbar ueber BEIDEN Zellen. Genau das muss man dem Stein
-  // ansehen, denn er braucht beide Spuren frei (SPEC §1.2).
-  const lang = CELL + CUBE_EDGE;
-  const ex = extWorld ? Math.abs(Math.round(extWorld[0])) : 0;
-  const ey = extWorld ? Math.abs(Math.round(extWorld[1])) : 0;
-  const ez = extWorld ? Math.abs(Math.round(extWorld[2])) : 0;
-  const g = new THREE.BoxGeometry(
-    ex ? lang : CUBE_EDGE,
-    ey ? lang : CUBE_EDGE,
-    ez ? lang : CUBE_EDGE);
+export function buildVariant(dirWorld, rowFromTop) {
+  const g = new THREE.BoxGeometry(CUBE_EDGE, CUBE_EDGE, CUBE_EDGE);
   const uv = g.getAttribute('uv');
   for (let f = 0; f < 6; f++) {
+    const t = dot3(dirWorld, FACE_N[f]);
+    if (t > 0.5) writeFaceUV(uv, f, TILE.TIP, rowFromTop, 0);
+    else if (t < -0.5) writeFaceUV(uv, f, TILE.TAIL, rowFromTop, 0);
+    else writeFaceUV(uv, f, TILE.ARROW, rowFromTop, inPlaneRotation(f, dirWorld));
+  }
+  uv.needsUpdate = true;
+  g.clearGroups();
+  g.addGroup(0, 36, 0);
+  return g;
+}
+
+/**
+ * Endstueck eines 2x1-Steins (SPEC §8.5.1).
+ *
+ * Ein langer Stein wird aus drei Teilen gebaut: zwei Endstuecke der Laenge CELL/2 und
+ * dazwischen ein normaler Wuerfel, der den Pfeil traegt. Dadurch ist der Pfeil genau so
+ * gross wie auf jedem anderen Stein und sitzt mittig auf der langen Seite - er wird nicht
+ * mitgestreckt. Die Endstuecke bleiben auf ihren LANGEN Flaechen blank; nur ihre
+ * quadratische Stirnflaeche traegt die regulaere Kachel, damit der Stein von vorn und
+ * hinten aussieht wie jeder andere.
+ *
+ * @param {number[]} dirWorld Weltrichtung des Pfeils
+ * @param {number} rowFromTop Atlaszeile
+ * @param {number[]} extWorld Weltrichtung des Auslegers
+ * @returns {THREE.BufferGeometry}
+ */
+export function buildCapVariant(dirWorld, rowFromTop, extWorld) {
+  const kappe = CELL * 0.5;
+  const ax = Math.abs(Math.round(extWorld[0]));
+  const ay = Math.abs(Math.round(extWorld[1]));
+  const az = Math.abs(Math.round(extWorld[2]));
+  const g = new THREE.BoxGeometry(
+    ax ? kappe : CUBE_EDGE,
+    ay ? kappe : CUBE_EDGE,
+    az ? kappe : CUBE_EDGE);
+
+  const uv = g.getAttribute('uv');
+  for (let f = 0; f < 6; f++) {
+    // Stirnflaechen sind die beiden senkrecht zur Auslegerachse; alles andere ist eine
+    // lange Flanke und bleibt blank.
+    const stirn = Math.abs(dot3(extWorld, FACE_N[f])) > 0.5;
+    if (!stirn) { writeFaceUV(uv, f, TILE.PLAIN, rowFromTop, 0); continue; }
     const t = dot3(dirWorld, FACE_N[f]);
     if (t > 0.5) writeFaceUV(uv, f, TILE.TIP, rowFromTop, 0);
     else if (t < -0.5) writeFaceUV(uv, f, TILE.TAIL, rowFromTop, 0);
@@ -1172,9 +1202,10 @@ export function createTowerView(ctx) {
   function belegeZellen(cube, cell) {
     const z = zellenAb(cube, cell);
     for (let k = 0; k < z.length; k++) if (z[k] !== OUT) byCell.set(z[k], cube.id);
-    // Der Stein ist EIN Mesh; als Trefferzelle gilt immer sein Anker. Die Regel liefert
-    // von beiden Zellen aus denselben Zug, ein Tipp auf die zweite Haelfte wirkt also gleich.
+    // Als Trefferzelle gilt immer der Anker, gleich welches Teilstueck getroffen wurde.
+    // Die Regel liefert von beiden Zellen aus denselben Zug.
     cube.mesh.userData.cell = cell;
+    for (let k = 0; k < cube.parts.length; k++) cube.parts[k].userData.cell = cell;
   }
 
   function raeumeZellen(cube, cell) {
@@ -1188,13 +1219,23 @@ export function createTowerView(ctx) {
    * @param {number} row Atlaszeile
    * @param {string|null} extKey Weltrichtung des Auslegers, null bei 1x1
    */
-  function variantFor(dirKey, row, extKey) {
-    const key = dirKey + '|' + row + '|' + (extKey || '-');
+  function variantFor(dirKey, row) {
+    const key = dirKey + '|' + row;
     let g = variants.get(key);
     if (!g) {
       const dv = dirKey.split(',').map(Number);
-      const ev = extKey ? extKey.split(',').map(Number) : undefined;
-      g = buildVariant(dv, row, ev);
+      g = buildVariant(dv, row);
+      variants.set(key, g);
+    }
+    return g;
+  }
+
+  /** Endstueck eines langen Steins, je (Richtung, Zeile, Ausleger) einmal gebaut. */
+  function capVariantFor(dirKey, row, extKey) {
+    const key = 'CAP|' + dirKey + '|' + row + '|' + extKey;
+    let g = variants.get(key);
+    if (!g) {
+      g = buildCapVariant(dirKey.split(',').map(Number), row, extKey.split(',').map(Number));
       variants.set(key, g);
     }
     return g;
@@ -1249,37 +1290,67 @@ export function createTowerView(ctx) {
       const row = spec.target ? ROW.TARGET : ROW.NORMAL;
       const zweite = spec.ext === undefined ? OUT : board.step[spec.cell * 6 + spec.ext];
 
-      // Ein 2x1-Stein ist ein einziges, laengliches Mesh. Sein Ursprung liegt im
-      // MITTELPUNKT zwischen beiden Zellen, nicht auf der Ankerzelle; cube.offset
-      // fuehrt diesen Versatz fuer alle Positionsrechnungen mit.
       const offset = new THREE.Vector3(0, 0, 0);
-      let extKey = null;
-      if (zweite !== OUT) {
+      /** @type {THREE.Object3D} */
+      let traeger;
+      /** @type {THREE.Mesh[]} */
+      const parts = [];
+
+      if (zweite === OUT) {
+        const mesh = new THREE.Mesh(variantFor(dirKey, row), mats.base);
+        traeger = mesh;
+        parts.push(mesh);
+      } else {
+        // Langer Stein aus drei Teilen: Wuerfel mit dem Pfeil in der Mitte, zwei blanke
+        // Endstuecke der Laenge CELL/2. Der Pfeil bleibt dadurch normal gross und sitzt
+        // mittig auf der langen Seite (SPEC §8.5.1).
         const ev = dirVectorOf(spec.cell, spec.ext).normalize();
-        extKey = dirKeyOf([ev.x, ev.y, ev.z]);
+        const extKey = dirKeyOf([ev.x, ev.y, ev.z]);
         offset.copy(ev).multiplyScalar(CELL * 0.5);
+
+        traeger = new THREE.Group();
+
+        const mitte = new THREE.Mesh(variantFor(dirKey, row), mats.base);
+        mitte.matrixAutoUpdate = false;
+        mitte.updateMatrix();
+        traeger.add(mitte);
+        parts.push(mitte);
+
+        const kappenGeo = capVariantFor(dirKey, row, extKey);
+        const abstand = (CUBE_EDGE + CELL * 0.5) * 0.5;
+        for (const seite of [-1, 1]) {
+          const kappe = new THREE.Mesh(kappenGeo, mats.base);
+          kappe.position.copy(ev).multiplyScalar(seite * abstand);
+          kappe.matrixAutoUpdate = false;
+          kappe.updateMatrix();
+          traeger.add(kappe);
+          parts.push(kappe);
+        }
       }
 
-      const mesh = new THREE.Mesh(variantFor(dirKey, row, extKey), mats.base);
-      mesh.position.copy(worldOf(spec.cell)).add(offset);
-      mesh.matrixAutoUpdate = false;
-      mesh.updateMatrix();
-      mesh.castShadow = mats.shadows;
-      mesh.receiveShadow = mats.shadows;
-      mesh.layers.enable(LAYER_PICK);
-      mesh.userData.cubeId = id;
-      mesh.userData.cell = spec.cell;
+      traeger.position.copy(worldOf(spec.cell)).add(offset);
+      traeger.matrixAutoUpdate = false;
+      traeger.updateMatrix();
+      traeger.userData.cubeId = id;
+      traeger.userData.cell = spec.cell;
+      for (const teil of parts) {
+        teil.castShadow = mats.shadows;
+        teil.receiveShadow = mats.shadows;
+        teil.layers.enable(LAYER_PICK);
+        teil.userData.cubeId = id;
+        teil.userData.cell = spec.cell;
+      }
 
       /** @type {CubeRef} */
       const cube = {
         id, cell: spec.cell, dir: spec.dir, dirKey, target: !!spec.target,
-        ext: spec.ext, parts: [mesh], offset,
+        ext: spec.ext, parts, offset,
         alive: true, busy: false, hovered: false, ghosted: false, hidden: false,
-        flashing: false, mesh, fadeMat: null
+        flashing: false, mesh: traeger, fadeMat: null
       };
       cubes.push(cube);
       belegeZellen(cube, spec.cell);
-      towerGroup.add(mesh);
+      towerGroup.add(traeger);
       refresh(cube);
       aliveCount++;
     }

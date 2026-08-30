@@ -235,6 +235,23 @@ body {
 
 .ps-settings.is-open { display: flex; }
 
+/* Der Weg zurueck aus der Schublade. Auf dem Telefon liegt sie ueber dem halben
+   Bild; "Fertig" gehoert deshalb ans Ende der Leiste und nicht nur in die Kopfzeile. */
+.ps-settings-schluss {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  flex: 1 1 100%;
+}
+
+.ps-settings-schluss .ps-btn {
+  min-width: 7rem;
+}
+
+@media (max-width: 560px) {
+  .ps-settings-schluss .ps-btn { width: 100%; }
+}
+
 .ps-field {
   display: flex;
   flex-direction: column;

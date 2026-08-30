@@ -32,6 +32,7 @@ export const TEXTE = {
   btnRestart: 'Neustart',
   btnBoard: 'Bestenliste',
   btnSettings: 'Einstellungen',
+  btnSettingsOk: 'Fertig',
   btnClose: 'Schließen',
   btnNext: 'Weiter',
   btnSubmit: 'Eintragen',
@@ -214,6 +215,7 @@ export function createUI(handlers) {
     btnRestart: id('ps-btn-restart'),
     btnBoard: id('ps-btn-board'),
     btnSettings: id('ps-btn-settings'),
+    btnSettingsOk: id('ps-btn-settings-ok'),
     settings: id('ps-settings'),
     skin: id('ps-skin'),
     skinChip: id('ps-skin-chip'),
@@ -405,10 +407,33 @@ export function createUI(handlers) {
   });
   on(E.btnBoard, 'click', () => rufe('onShowBoard'));
 
-  on(E.btnSettings, 'click', () => {
+  /** Oeffnet oder schliesst die Einstellungsschublade und fuehrt aria-expanded mit. */
+  function einstellungen(offen) {
     if (!E.settings) return;
-    const jetztOffen = E.settings.classList.toggle('is-open');
-    E.btnSettings.setAttribute('aria-expanded', jetztOffen ? 'true' : 'false');
+    E.settings.classList.toggle('is-open', offen);
+    if (E.btnSettings) E.btnSettings.setAttribute('aria-expanded', offen ? 'true' : 'false');
+  }
+
+  on(E.btnSettings, 'click', () => {
+    einstellungen(!E.settings.classList.contains('is-open'));
+  });
+
+  // Die Schublade laesst sich mit "Fertig" schliessen, nicht nur ueber die Kopfzeile:
+  // auf dem Telefon liegt sie ueber dem halben Bild und der Weg zurueck muss dort sein,
+  // wo der Daumen gerade ist.
+  on(E.btnSettingsOk, 'click', () => {
+    einstellungen(false);
+    if (E.btnSettings && typeof E.btnSettings.focus === 'function') E.btnSettings.focus();
+  });
+
+  // Escape schliesst die Schublade ebenfalls - aber nur, wenn kein Overlay darueber liegt.
+  on(document, 'keydown', (ev) => {
+    if (ev.key !== 'Escape' && ev.key !== 'Esc') return;
+    if (offen) return;
+    if (!E.settings || !E.settings.classList.contains('is-open')) return;
+    ev.preventDefault();
+    einstellungen(false);
+    if (E.btnSettings && typeof E.btnSettings.focus === 'function') E.btnSettings.focus();
   });
 
   // --- Einstellungen ----------------------------------------------------
