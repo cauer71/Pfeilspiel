@@ -727,8 +727,20 @@ function writeFaceUV(uv, f, col, rowFromTop, rot) {
  * @param {number} rowFromTop Atlaszeile von oben (ROW.*)
  * @returns {THREE.BufferGeometry}
  */
-export function buildVariant(dirWorld, rowFromTop) {
-  const g = new THREE.BoxGeometry(CUBE_EDGE, CUBE_EDGE, CUBE_EDGE);
+export function buildVariant(dirWorld, rowFromTop, extWorld) {
+  // Ein 2x1-Stein ist EIN laenglicher Koerper, kein Paar aus zwei Wuerfeln: entlang der
+  // Auslegerachse misst er CELL + CUBE_EDGE, quer dazu wie ein Wuerfel. Die Kachel des
+  // Atlas spannt sich dabei ueber die ganze lange Flaeche - der Pfeil wird also lang
+  // gezogen und liegt sichtbar ueber BEIDEN Zellen. Genau das muss man dem Stein
+  // ansehen, denn er braucht beide Spuren frei (SPEC §1.2).
+  const lang = CELL + CUBE_EDGE;
+  const ex = extWorld ? Math.abs(Math.round(extWorld[0])) : 0;
+  const ey = extWorld ? Math.abs(Math.round(extWorld[1])) : 0;
+  const ez = extWorld ? Math.abs(Math.round(extWorld[2])) : 0;
+  const g = new THREE.BoxGeometry(
+    ex ? lang : CUBE_EDGE,
+    ey ? lang : CUBE_EDGE,
+    ez ? lang : CUBE_EDGE);
   const uv = g.getAttribute('uv');
   for (let f = 0; f < 6; f++) {
     const t = dot3(dirWorld, FACE_N[f]);
@@ -736,23 +748,6 @@ export function buildVariant(dirWorld, rowFromTop) {
     else if (t < -0.5) writeFaceUV(uv, f, TILE.TAIL, rowFromTop, 0);
     else writeFaceUV(uv, f, TILE.ARROW, rowFromTop, inPlaneRotation(f, dirWorld));
   }
-  uv.needsUpdate = true;
-  g.clearGroups();
-  g.addGroup(0, 36, 0);
-  return g;
-}
-
-/**
- * Eine Wuerfelgeometrie ganz ohne Pfeil. Sie bildet die zweite Haelfte eines 2x1-Steins:
- * der Stein traegt dadurch GENAU EINEN Pfeil und liest sich als ein laenglicher Klotz,
- * nicht als zwei zufaellig aneinanderliegende Wuerfel (SPEC §8.5.1).
- * @param {number} rowFromTop Atlaszeile von oben (ROW.*)
- * @returns {THREE.BufferGeometry}
- */
-export function buildPlainVariant(rowFromTop) {
-  const g = new THREE.BoxGeometry(CUBE_EDGE, CUBE_EDGE, CUBE_EDGE);
-  const uv = g.getAttribute('uv');
-  for (let f = 0; f < 6; f++) writeFaceUV(uv, f, TILE.PLAIN, rowFromTop, 0);
   uv.needsUpdate = true;
   g.clearGroups();
   g.addGroup(0, 36, 0);
@@ -1177,8 +1172,9 @@ export function createTowerView(ctx) {
   function belegeZellen(cube, cell) {
     const z = zellenAb(cube, cell);
     for (let k = 0; k < z.length; k++) if (z[k] !== OUT) byCell.set(z[k], cube.id);
-    for (let k = 0; k < cube.parts.length; k++)
-      cube.parts[k].userData.cell = z[Math.min(k, z.length - 1)];
+    // Der Stein ist EIN Mesh; als Trefferzelle gilt immer sein Anker. Die Regel liefert
+    // von beiden Zellen aus denselben Zug, ein Tipp auf die zweite Haelfte wirkt also gleich.
+    cube.mesh.userData.cell = cell;
   }
 
   function raeumeZellen(cube, cell) {
@@ -1187,22 +1183,20 @@ export function createTowerView(ctx) {
       if (z[k] !== OUT && byCell.get(z[k]) === cube.id) byCell.delete(z[k]);
   }
 
-  function variantFor(dirKey, row) {
-    const key = dirKey + '|' + row;
+  /**
+   * @param {string} dirKey Weltrichtung des Pfeils
+   * @param {number} row Atlaszeile
+   * @param {string|null} extKey Weltrichtung des Auslegers, null bei 1x1
+   */
+  function variantFor(dirKey, row, extKey) {
+    const key = dirKey + '|' + row + '|' + (extKey || '-');
     let g = variants.get(key);
     if (!g) {
-      const parts = dirKey.split(',');
-      g = buildVariant([Number(parts[0]), Number(parts[1]), Number(parts[2])], row);
+      const dv = dirKey.split(',').map(Number);
+      const ev = extKey ? extKey.split(',').map(Number) : undefined;
+      g = buildVariant(dv, row, ev);
       variants.set(key, g);
     }
-    return g;
-  }
-
-  /** Pfeillose Haelfte eines 2x1-Steins, je Atlaszeile einmal gebaut. */
-  function plainVariantFor(row) {
-    const key = 'PLAIN|' + row;
-    let g = variants.get(key);
-    if (!g) { g = buildPlainVariant(row); variants.set(key, g); }
     return g;
   }
 
@@ -1253,68 +1247,39 @@ export function createTowerView(ctx) {
       const dv = dirVectorOf(spec.cell, spec.dir);
       const dirKey = dirKeyOf([dv.x, dv.y, dv.z]);
       const row = spec.target ? ROW.TARGET : ROW.NORMAL;
-      const geo = variantFor(dirKey, row);
       const zweite = spec.ext === undefined ? OUT : board.step[spec.cell * 6 + spec.ext];
 
-      /** @type {THREE.Object3D} */
-      let traeger;
-      /** @type {THREE.Mesh[]} */
-      const parts = [];
+      // Ein 2x1-Stein ist ein einziges, laengliches Mesh. Sein Ursprung liegt im
+      // MITTELPUNKT zwischen beiden Zellen, nicht auf der Ankerzelle; cube.offset
+      // fuehrt diesen Versatz fuer alle Positionsrechnungen mit.
       const offset = new THREE.Vector3(0, 0, 0);
-
-      if (zweite === OUT) {
-        const mesh = new THREE.Mesh(geo, mats.base);
-        traeger = mesh;
-        parts.push(mesh);
-      } else {
-        // Zwei Teilwuerfel in einer Gruppe. Sie werden entlang der Auslegerachse leicht
-        // gestreckt und aufeinander zu geschoben, damit die Fuge verschwindet und der
-        // Stein als EIN laenglicher Klotz gelesen wird - mit einem Pfeil je Zelle.
+      let extKey = null;
+      if (zweite !== OUT) {
         const ev = dirVectorOf(spec.cell, spec.ext).normalize();
+        extKey = dirKeyOf([ev.x, ev.y, ev.z]);
         offset.copy(ev).multiplyScalar(CELL * 0.5);
-        const halb = (CELL + CUBE_EDGE) * 0.5;      // Laenge einer Haelfte
-        const streck = halb / CUBE_EDGE;
-        const skala = new THREE.Vector3(
-          1 + (streck - 1) * Math.abs(ev.x),
-          1 + (streck - 1) * Math.abs(ev.y),
-          1 + (streck - 1) * Math.abs(ev.z));
-
-        traeger = new THREE.Group();
-        const blank = plainVariantFor(row);
-        for (const seite of [-1, 1]) {
-          // Nur die Ankerhaelfte traegt den Pfeil; die zweite bleibt blank.
-          const teil = new THREE.Mesh(seite === -1 ? geo : blank, mats.base);
-          teil.position.copy(ev).multiplyScalar(seite * halb * 0.5);
-          teil.scale.copy(skala);
-          teil.matrixAutoUpdate = false;
-          teil.updateMatrix();
-          traeger.add(teil);
-          parts.push(teil);
-        }
       }
 
-      traeger.position.copy(worldOf(spec.cell)).add(offset);
-      traeger.matrixAutoUpdate = false;
-      traeger.updateMatrix();
-      traeger.userData.cubeId = id;
-      for (const teil of parts) {
-        teil.castShadow = mats.shadows;
-        teil.receiveShadow = mats.shadows;
-        teil.layers.enable(LAYER_PICK);
-        teil.userData.cubeId = id;
-        teil.userData.cell = spec.cell;
-      }
+      const mesh = new THREE.Mesh(variantFor(dirKey, row, extKey), mats.base);
+      mesh.position.copy(worldOf(spec.cell)).add(offset);
+      mesh.matrixAutoUpdate = false;
+      mesh.updateMatrix();
+      mesh.castShadow = mats.shadows;
+      mesh.receiveShadow = mats.shadows;
+      mesh.layers.enable(LAYER_PICK);
+      mesh.userData.cubeId = id;
+      mesh.userData.cell = spec.cell;
 
       /** @type {CubeRef} */
       const cube = {
         id, cell: spec.cell, dir: spec.dir, dirKey, target: !!spec.target,
-        ext: spec.ext, parts, offset,
+        ext: spec.ext, parts: [mesh], offset,
         alive: true, busy: false, hovered: false, ghosted: false, hidden: false,
-        flashing: false, mesh: traeger, fadeMat: null
+        flashing: false, mesh, fadeMat: null
       };
       cubes.push(cube);
       belegeZellen(cube, spec.cell);
-      towerGroup.add(traeger);
+      towerGroup.add(mesh);
       refresh(cube);
       aliveCount++;
     }

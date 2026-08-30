@@ -1882,26 +1882,33 @@ herausziehen.
 
 #### 8.5.1 Darstellung eines 2x1-Steins
 
-Ein 2x1-Stein wird **nicht** als eigene, laengliche Geometrie gebaut, sondern als
-`THREE.Group` aus **zwei** Teilwuerfeln derselben Variantengeometrie. Das hat drei Gruende:
-die 12 Variantengeometrien aus §8.5 bleiben unveraendert wiederverwendbar, jede Zelle traegt
-ihren eigenen, unverzerrten Pfeil, und das Auswahl- und Animationswerk arbeitet unveraendert
-auf einem einzigen Objekt.
-
-Damit die Fuge zwischen den Haelften verschwindet und der Stein als EIN Klotz gelesen wird,
-werden die Haelften entlang der Auslegerachse gestreckt und aufeinander zu geschoben:
+Ein 2x1-Stein ist **ein einziges Mesh**, kein Paar aus zwei Wuerfeln. Seine BoxGeometry misst
+entlang der Auslegerachse `CELL + CUBE_EDGE`, quer dazu `CUBE_EDGE`:
 
 ```
-halb   = (CELL + CUBE_EDGE) / 2                  // Laenge einer Haelfte, 0.96
-skala  = halb / CUBE_EDGE                        // nur auf der Auslegerachse, 1.0435
-teil.position = ±ev * halb / 2                   // ±0.48 statt ±0.50
-gruppe.position = worldPos(anker) + ev * CELL/2  // Mittelpunkt zwischen beiden Zellen
+lang = CELL + CUBE_EDGE                     // 1.92
+BoxGeometry(ex ? lang : CUBE_EDGE, ey ? lang : CUBE_EDGE, ez ? lang : CUBE_EDGE)
+mesh.position = worldPos(anker) + ev * CELL/2      // Mittelpunkt zwischen beiden Zellen
 ```
 
-Der Gruppenursprung liegt also im **Mittelpunkt des Steins**, nicht auf der Ankerzelle. Jede
-Zielposition einer Animation MUSS diesen Versatz mitfuehren (`cube.offset`). Material,
-Schattenflags und die Auswahlebene werden auf den **Teilwuerfeln** gesetzt, nicht auf der
-Gruppe: `THREE.Group` kennt kein `material`, und der Raycaster prueft die Ebenen je Objekt.
+Die UV-Umschreibung aus §8.5 bleibt unveraendert: `writeFaceUV` spannt die Atlaskachel ueber
+die ganze Flaeche. Auf den langen Flaechen wird der Pfeil dadurch gestreckt und liegt sichtbar
+ueber **beiden** Zellen.
+
+**Das ist kein kosmetisches Detail, sondern eine Spielanforderung.** Ein 2x1-Stein braucht
+seine Bahn auf beiden Spuren frei (§1.2). Traegt er nur auf einer Haelfte einen Pfeil oder
+zerfaellt er optisch in zwei Wuerfel, prueft der Spieler nur eine Spur, tippt und bekommt einen
+ungueltigen Zug, den er sich nicht erklaeren kann. Frueher gebaute Varianten (zwei Haelften mit
+je einem Pfeil; eine Haelfte blank) sind aus genau diesem Grund verworfen.
+
+Der Meshursprung liegt im **Mittelpunkt des Steins**, nicht auf der Ankerzelle. Jede
+Zielposition einer Animation MUSS diesen Versatz mitfuehren (`cube.offset`). Als Trefferzelle
+gilt stets der Anker; die Regel liefert von beiden Zellen aus denselben Zug, ein Tipp auf die
+zweite Haelfte wirkt also gleich.
+
+`buildVariant(dirWorld, rowFromTop, extWorld)` nimmt den Ausleger als dritten Parameter;
+`extWorld === undefined` liefert den Wuerfel. Der Variantenschluessel lautet
+`${dirWorldKey}|${row}|${extWorldKey ?? '-'}`.
 
 ### 8.6 Sichtbarkeit
 
