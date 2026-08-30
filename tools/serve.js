@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 
-const ROOT = new URL('..', import.meta.url).pathname
+const ROOT = new URL('../public/', import.meta.url).pathname
 const PORT = Number(process.env.PORT || 8787)
 
 const TYPES = {
