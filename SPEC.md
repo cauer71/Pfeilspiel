@@ -1,16 +1,22 @@
 # Pfeilspiel — Verbindliche technische Spezifikation
 
-**Status:** normativ. Version der Spezifikation: `SPEC v2`, Regelversion `RULE_VERSION = 2`,
-Generatorversion `GEN_VERSION = 2`.
+**Status:** normativ. Version der Spezifikation: `SPEC v3`, Regelversion `RULE_VERSION = 3`,
+Generatorversion `GEN_VERSION = 3`.
 
-**Aenderungen gegenueber v1** (beide auf ausdrueckliche Anforderung, beide veraendern den
-Regelkern und damit die Versionsnummern):
+**Aenderungen gegenueber v1**, alle auf ausdrueckliche Anforderung, alle am Regelkern:
 
-1. **Rutschen.** Ist die Bahn in Pfeilrichtung bis zum Rand vollstaendig frei, verlaesst der
-   Stein den Turm sofort ganz, statt nur ein Feld vorzuruecken. Der Einzelschritt bleibt fuer
-   den Fall, dass die Bahn weiter vorn verstellt ist.
-2. **Zweizellige Steine.** Neben 1x1-Wuerfeln gibt es 2x1-Steine, die zwei benachbarte Zellen
+1. **Zweizellige Steine.** Neben 1x1-Wuerfeln gibt es 2x1-Steine, die zwei benachbarte Zellen
    belegen und sich als starre Einheit bewegen. Die Vorlage zeigt sie ebenfalls.
+2. **Kein Schritt, kein Sprung.** Ein Stein bewegt sich genau dann, wenn seine Bahn in
+   Pfeilrichtung bis zum Rand vollstaendig frei ist — dann verlaesst er den Turm ganz. Steht
+   irgendwo auf dieser Bahn ein anderer Stein, passiert nichts.
+
+Zur zweiten Aenderung, weil sie zwei fruehere Fassungen zuruecknimmt: v1 hatte die
+Halma-Sprungkette, v2 zusaetzlich das Rutschen bei freier Bahn. Beide liessen einen sichtbar
+blockierten Stein ueber seinen Blockierer hinweg verschwinden — genau das ist der Grund fuer
+die Ruecknahme. **Blockiert heisst blockiert.** Damit hat die Regel nur noch zwei Ausgaenge,
+`EXIT` und `INVALID`; `STEP`, `JUMP`, `jumps` und `jumped` sind ersatzlos entfallen, ebenso
+die zweite Rueckwaertsoperation des Generators (`unRelocate`) und alle Kettenkennzahlen.
 
 **Basisentwurf:** Entwurf **C** (flacher Zellindex + vorberechnete Schritttabelle) hat alle drei
 Urteile gewonnen und ist die Grundlage. Verbindlich eingearbeitet sind die von den Judges
@@ -60,7 +66,7 @@ unveraenderlichen Richtung. Ein Tipp auf einen Wuerfel bewegt genau diesen Wuerf
 Pfeilrichtung. Der Turm ist frei drehbar (Orbit) und zoombar. Es gibt **keine Schwerkraft**:
 verbleibende Wuerfel schweben an Ort und Stelle.
 
-### 1.2 Zugregel (Halma-Variante mit Rutschen) — normativ
+### 1.2 Zugregel — normativ
 
 Ein **Stein** belegt eine Zelle (1x1) oder zwei benachbarte Zellen (2x1) und traegt genau eine
 feste Richtung `d`. Sei `Z` die Menge seiner Zellen. `Z+k` bezeichnet die Menge, die entsteht,
@@ -73,35 +79,32 @@ ziehenden Stein selbst gehoert**. Der Zusatz ist nicht kosmetisch: ohne ihn koen
 
 | # | Regel |
 |---|---|
-| R0 | **RUTSCH.** Ist `Z+1` frei und bleibt die Bahn `Z+2, Z+3, …` frei, bis der Stein das Gitter verlaesst, so verlaesst er den Turm in genau diesem Zug ganz. Ergebnis `EXIT` mit `jumps = 0`. |
-| R1 | **SCHRITT.** Ist `Z+1` frei, die Bahn danach aber verstellt, rueckt der Stein genau ein Feld vor. Ein Schritt kettet nie. |
-| R2 | **SPRUNG.** Ist `Z+1` nicht frei und `Z+2` frei, springt der Stein ueber die Blocker hinweg auf `Z+2`. |
-| R3 | **KETTE.** Nach einem Sprung wird fortgesetzt, solange von der aktuellen Lage aus wieder gesprungen werden kann. Die Kette ist zwingend. |
-| R4 | **UNGUELTIG.** Weder R0/R1 noch R2 anwendbar → kein Zug, kein Zaehler, kein Undo-Eintrag, nur Wackelanimation plus rotes Aufblitzen des Blockierers. |
-| R5 | **AUSTRITT.** Verlaesst der Stein das Gitter, fliegt er weg und ist aus dem Spiel. Ein Stein bleibt nie halb ausserhalb stehen. |
+| R1 | **AUSTRITT.** Sind `Z+1, Z+2, …` der Reihe nach frei, bis der Stein das Gitter verlaesst, so verlaesst er den Turm in genau diesem Zug ganz. Ergebnis `EXIT`. |
+| R2 | **UNGUELTIG.** Steht irgendwo auf dieser Bahn ein anderer Stein, passiert nichts: kein Zug, kein Zaehler, kein Undo-Eintrag, nur Wackelanimation plus rotes Aufblitzen des ersten Blockierers. Ergebnis `INVALID` mit `reason: 'BLOCKED'`. |
+| R3 | Ein Stein bleibt nie halb ausserhalb stehen und nie auf halbem Weg liegen. Es gibt keinen Zwischenzustand. |
 
-R0 hat Vorrang vor R1: bei freier Bahn wird nicht geschritten, sondern ausgetreten. Das ist die
-Regel der Vorlage und der Grund, warum sich ein Turm ueberhaupt zuegig abbauen laesst.
+**Es gibt weder Schritt noch Sprung.** Ein blockierter Stein bleibt blockiert, bis sein
+Blockierer selbst gegangen ist. Genau darin besteht das Spiel: die richtige Reihenfolge finden.
 
 ### 1.3 Randfaelle — abschliessend und normativ
 
 | Fall | Bedingung | Ergebnis |
 |---|---|---|
-| RF-1 | `Z+1` enthaelt `OUT`, die uebrigen Zellen sind frei | `EXIT`. Grenze vor Belegung: die Belegung ausserhalb wird nie geprueft, es gibt sie nicht. |
-| RF-2 | `Z+1` frei, Bahn danach verstellt | `STEP` um genau ein Feld. Keine Verkettung. |
-| RF-2b | `Z+1` frei, Bahn bis zum Rand frei | `EXIT` (R0), `jumps = 0`, `path` nennt die durchlaufenen Ankerzellen. |
-| RF-3 | `Z+1` besetzt, `Z+2` enthaelt `OUT` und der Rest ist frei | `EXIT`. Der Stein springt ueber den letzten Blocker ins Freie. |
-| RF-4 | `Z+1` besetzt, `Z+2` ebenfalls besetzt | `INVALID` (`reason:'BLOCKED'`). |
-| RF-4b | `Z+1` enthaelt `OUT`, eine verbleibende Zelle ist besetzt | Sprungpruefung nach R2; schlaegt sie fehl, `INVALID`. |
-| RF-5 | Kette: `Z+1` enthaelt `OUT` | Kette endet, Stein bleibt stehen. Ergebnis `JUMP`. |
-| RF-6 | Kette: `Z+1` frei | Kette endet. **Es gibt keinen Schritt und kein Rutschen hinter einem Sprung.** Ergebnis `JUMP`. |
-| RF-7 | Kette: `Z+1` besetzt, `Z+2` enthaelt `OUT` | `EXIT` mitten aus der Kette heraus. |
-| RF-8 | Kette: `Z+1` besetzt, `Z+2` ebenfalls besetzt | Kette endet. Ergebnis `JUMP`. |
-| RF-9 | Stein bereits ausgeschieden (`alive == 0`) oder Zellindex entartet | `INVALID` (`reason:'DEAD'`). Tritt nur bei Programmfehlern auf. |
-| RF-10 | FASSADE: „ausserhalb“ heisst **ausserhalb des eigenen Wandrechtecks**. Ein Stein einer Nachbarwand existiert fuer die Regel nicht — er blockiert nicht und wird nicht uebersprungen. | Kein Ueberklettern auf die Nachbarwand. |
-| RF-11 | Terminierung | `d` ist konstant, die Lage waechst je Iteration um `d` (Rutschen) bzw. `2d` (Kette) auf einem endlichen Strahl. Ein Zaehlerlimit gehoert in die Tests, nicht in den Produktivpfad. |
-| RF-12 | Ein Zug veraendert **genau einen** Stein und laesst seine Form unveraendert. Uebersprungene Steine bleiben unberuehrt. | Undo ist deshalb exakt invers und O(1). |
-| RF-13 | Ein 2x1-Stein bleibt bei jedem Zug starr: der Ausleger (`extOf`) aendert sich nie. Innerhalb einer Wand bzw. des Quaders ist das Gitter regelmaessig, die beiden Zellen bleiben also auch nach der Verschiebung benachbart. | Testgegenstand, §10.2. |
+| RF-1 | `Z+1` enthaelt `OUT`, die uebrigen Zellen sind frei | `EXIT`. Grenze vor Belegung: die Belegung ausserhalb wird nie geprueft, es gibt sie nicht. `path` ist dann nur die Startzelle. |
+| RF-2 | Die ganze Bahn ist frei | `EXIT`. `path` nennt jede durchlaufene Ankerzelle, die Startzelle eingeschlossen, und endet an der letzten Zelle vor dem Rand. |
+| RF-3 | Irgendeine Zelle der Bahn ist von einem fremden Stein besetzt | `INVALID` (`reason:'BLOCKED'`). `blocker` nennt **genau die zuerst getroffenen** Blockierzellen — nicht alle auf der Bahn. |
+| RF-4 | Stein bereits ausgeschieden (`alive == 0`), leere Zelle oder entarteter Zellindex | `INVALID` (`reason:'DEAD'`), `blocker` leer. |
+| RF-5 | FASSADE: „ausserhalb“ heisst **ausserhalb des eigenen Wandrechtecks**. Ein Stein einer Nachbarwand existiert fuer die Regel nicht — er blockiert nicht. | Kein Ueberklettern auf die Nachbarwand; `path` und `blocker` liegen stets auf derselben Wand. |
+| RF-6 | Ein gueltiger Zug entfernt **genau einen** Stein. Alle uebrigen bleiben unberuehrt. | Undo ist deshalb exakt invers und O(1). |
+| RF-7 | Ein 2x1-Stein ist starr: der Ausleger (`extOf`) aendert sich nie, und beide Zellen verlassen den Turm gemeinsam. | Testgegenstand, §10.12. |
+| RF-8 | Terminierung | `d` ist konstant, die Lage waechst je Iteration um `d` auf einem endlichen Strahl. `path.length` ist hoechstens `max(W,H,D)`. |
+
+**Monotonie (Folgerung, normativ fuer den Generator).** Ein Austritt raeumt Zellen und belegt
+keine. Ein Stein, der zu einem Zeitpunkt ziehen kann, kann es danach immer noch. Daraus folgt:
+ist ein Level vom Startzustand aus loesbar, so fuehrt **jede** Folge gueltiger Zuege zur
+Loesung — die Reihenfolge entscheidet nicht ueber Erfolg oder Misserfolg, sondern nur darueber,
+welche Steine gerade sichtbar ziehbar sind. Sackgassen entstehen deshalb ausschliesslich aus
+der Startaufstellung (zwei Steine, die aufeinander zeigen), nie durch Fehlzuege.
 
 ### 1.4 Modi
 
@@ -420,12 +423,10 @@ und macht Referenzloesung und Replay formatgleich.
  * @property {'FASSADE'|'VOLUMEN'} mode @property {'ABBAU'|'BEFREIUNG'} goal
  * @property {number} W @property {number} H @property {number} D
  * @property {number} density        Zieldichte 0..1
- * @property {number} maxChain       maximal erlaubte Sprungglieder je Referenzzug (1..4)
  * @property {number} dominoRate     Anteil der Runden, in denen ein 2x1-Stein statt eines
  *                                   1x1-Wuerfels gesetzt wird (0..1). Folgt wie density aus
  *                                   (Modus, Ziel, Masse), damit ein Level allein aus seinem
  *                                   Levelcode bitgleich nachbaubar bleibt.
- * @property {number} relocateRate   Standard 0
  * @property {{wFill:number,wChain:number,wFrag:number,wDiv:number,wSil:number,wRand:number}} weights
  * @property {{naivePerPar:[number,number], chainShare:[number,number],
  *             mobility:[number,number], trivialExit:[number,number]}} bands
@@ -498,7 +499,7 @@ export const EMPTY: -1;
 export const CELL: 1.0;
 export const CUBE_EDGE: 0.92;
 export const MAX_CUBES: 1200;
-export const RULE_VERSION: 2;
+export const RULE_VERSION: 3;
 export const EXT_NONE: 255;          // extOf-Wert eines einzelligen Steins
 export const MAX_STEIN_ZELLEN: 2;    // groesste Zellzahl eines Steins
 export const DIR6: ReadonlyArray<[number,number,number]>;          // PX,NX,PY,NY,PZ,NZ
@@ -569,7 +570,7 @@ export function toRunLog(session: Session, meta: {name, runId, clientId, appVers
 ### 4.2 `src/levels.js` — Generator, Verifikation, Kurve
 
 ```js
-export const GEN_VERSION: 2;
+export const GEN_VERSION: 3;
 
 // --- Erzeugung ----------------------------------------------------------
 export function generateLevel(spec: LevelSpec): Level;
@@ -953,10 +954,12 @@ jede MUSS vom Kandidatentest **verworfen** werden (§10.3).
 | N5 | Zustandsdrift | Verifikation gegen den Endzustand statt gegen den Zustand, der zur Spielzeit vorliegt. |
 | N6 | Austritts-Umkehr | Ein ausgeflogener Wuerfel wird an einer Stelle wieder eingesetzt, an der er im dann aktuellen, dichteren Zustand nicht austritt. |
 
-### 6.3 Die beiden Rueckwaertsoperationen
+### 6.3 Die Rueckwaertsoperation
 
-**(A) `unExit` — Einschleusen eines neuen Steins.** Erhoeht die Steinzahl; jeder Stein des
-Turms entsteht so.
+Es gibt nur noch **eine**: `unExit`, das Einschleusen eines neuen Steins. Die zweite Operation
+der Versionen 1 und 2 (`unRelocate`, das Zurueckziehen eines vorhandenen Steins auf ein Feld,
+von dem aus ihn ein Schritt oder eine Sprungkette wieder an seinen Platz brachte) ist mit
+Schritt und Sprung ersatzlos entfallen.
 
 ```
 waehle Form: 1x1 oder 2x1 (je Runde vorab, mit Wahrscheinlichkeit spec.dominoRate)
@@ -967,7 +970,7 @@ bei 2x1 zusaetzlich Ausleger e mit
     board.valid[z*6+d] === 1                                  // beide Zellen tragen d
 id = addCube(state, a, d, false, e)
 m  = resolveMove(board, state, a)
-akzeptiere gdw. m.kind === 'EXIT' && m.jumps <= spec.maxChain
+akzeptiere gdw. m.kind === 'EXIT'
 sonst: dropCube(state, id), naechster Kandidat
 akzeptiert: ref.unshift(a)   // Ankerzelle des Klicks
 ```
@@ -977,30 +980,11 @@ Andernfalls waechst die Suche um den Faktor der moeglichen Ausleger, ohne dass d
 2x1-Steine steuerbar waere. Findet eine 2x1-Runde keinen Kandidaten, faellt sie auf 1x1
 zurueck — die Garantie haengt an der Regel, nicht an der Form.
 
-Die Loesbarkeitsgarantie bleibt davon unberuehrt: akzeptiert wird ausschliesslich, was
-`resolveMove` im **dann gueltigen** Zustand als Austritt bestaetigt. Die Form des Steins geht
-nur in die Kandidatenwahl ein, nie in die Beurteilung.
-
-**(B) `unRelocate` — Zurueckziehen eines vorhandenen Wuerfels.** Erzeugt `par > N`. Standardmaessig
-abgeschaltet (`relocateRate = 0`).
-
-```
-waehle lebenden Wuerfel q auf Zelle b; d = state.dirOf[q]   // FESTE Richtung, nie neu waehlen (N4)
-hebe q von b ab (occ[b] = EMPTY)
-fuer t = 1..(max(W,H,D)+2):
-   a = step[a_{t-1}*6 + opp[d]]   (a_0 = b);  Abbruch bei OUT
-   wenn occ[a] === EMPTY:
-       setze q auf a
-       m = resolveMove(board, state, a)
-       akzeptiere gdw. (m.kind === 'STEP' || m.kind === 'JUMP')
-                    && m.to === b && m.jumps <= spec.maxChain
-       bei Ablehnung: q wieder abheben, weiter
-akzeptiert: ref.unshift(a)
-alle abgelehnt: q zurueck auf b, Operation schlaegt folgenlos fehl
-```
-
-Der Kandidatenraum ist **genau der eindimensionale Rueckwaertsstrahl** von `b` entlang `opp[d]`,
-weil die Richtung waehrend einer Kette konstant ist. Man muss die Kettenlaenge nicht raten.
+**Warum das traegt.** Wird rueckwaerts `S1, S2, …, Sn` gesetzt, so lautet die Referenzloesung
+vorwaerts `Sn, …, S2, S1`. Wenn `Sk` vorwaerts angetippt wird, stehen genau die Steine
+`S1 … Sk`, denn alle spaeter gesetzten sind bereits gegangen — das ist exakt der Zustand, in
+dem `Sk` beim Setzen geprueft wurde. Die Pruefung erfolgt also nie gegen einen anderen Zustand
+als den der Zugzeit; das ist die einzige verbliebene Ausfallart (§6.2).
 
 ### 6.4 Induktionsbeweis der Loesbarkeit
 
@@ -1172,16 +1156,16 @@ Generatorleveln **niemals** in einer Sackgasse enden, bevor er mindestens einen 
 
 ### 6.11 Levelkurve (`levelSpecFor`, explizite Tabelle)
 
-| Stufe | Level | Modus | Ziel | W×H×D | Dichte | 2×1-Anteil | maxChain | q | Sterne |
-|---|---|---|---|---|---|---|---|---|---|
-| 1 | 1–3 | FASSADE | ABBAU | 3×4×3 | 0.95 | 0 | 1 | – | par / 1.15 / 1.35 |
-| 2 | 4–8 | FASSADE | ABBAU | 4×6×4 | 0.92 | 0.18 | 2 | – | par / 1.15 / 1.30 |
-| 3 | 9–12 | FASSADE | BEFREIUNG | 4×8×4 | 0.95 | 0.30 | 2 | 0.55 | par / 1.15 / 1.30 |
-| 4 | 13–18 | FASSADE | ABBAU | 5×10×5 | 0.92 | 0.30 | 3 | – | par / 1.12 / 1.25 |
-| 5 | 19–22 | VOLUMEN | BEFREIUNG | 3×5×3 | 0.85 | 0.30 | 2 | 0.60 | par / 1.12 / 1.25 |
-| 6 | 23–30 | VOLUMEN | ABBAU | 4×6×4 | 0.85 | 0.30 | 3 | – | par / 1.12 / 1.25 |
-| 7 | 31–40 | VOLUMEN | BEFREIUNG | 4×8×4 | 0.90 | 0.30 | 4 | 0.80 | par / 1.12 / 1.25 |
-| 8 | 41+ | abwechselnd | abwechselnd | wachsend, **gedeckelt** | 0.90 | 0.30 | 4 | 0.70 | par / 1.12 / 1.25 |
+| Stufe | Level | Modus | Ziel | W×H×D | Dichte | 2×1-Anteil | q | Sterne |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 1–3 | FASSADE | ABBAU | 3×4×3 | 0.95 | 0 | – | par / 1.15 / 1.35 |
+| 2 | 4–8 | FASSADE | ABBAU | 4×6×4 | 0.92 | 0.18 | – | par / 1.15 / 1.30 |
+| 3 | 9–12 | FASSADE | BEFREIUNG | 4×8×4 | 0.95 | 0.30 | 0.55 | par / 1.15 / 1.30 |
+| 4 | 13–18 | FASSADE | ABBAU | 5×10×5 | 0.92 | 0.30 | – | par / 1.12 / 1.25 |
+| 5 | 19–22 | VOLUMEN | BEFREIUNG | 3×5×3 | 0.85 | 0.30 | 0.60 | par / 1.12 / 1.25 |
+| 6 | 23–30 | VOLUMEN | ABBAU | 4×6×4 | 0.85 | 0.30 | – | par / 1.12 / 1.25 |
+| 7 | 31–40 | VOLUMEN | BEFREIUNG | 4×8×4 | 0.90 | 0.30 | 0.80 | par / 1.12 / 1.25 |
+| 8 | 41+ | abwechselnd | abwechselnd | wachsend, **gedeckelt** | 0.90 | 0.30 | 0.70 | par / 1.12 / 1.25 |
 
 Stufe 8, mit `k = n - 41`: `W = D = min(6, 5 + floor(k/30))`,
 `H = min(16, 10 + floor(k/6))` in FASSADE und `H = min(10, 6 + floor(k/8))` in VOLUMEN.
@@ -1199,13 +1183,24 @@ Harte Deckel: 6×16×6 in FASSADE (336 Zellen), 6×10×6 in VOLUMEN (360 Zellen)
 Fuellmass unbrauchbar. `metrics.density`, die Zielzahl des Rueckwaertsbaus und die Baender
 beziehen sich alle auf belegte Zellen.
 
-`relocateRate = 0` in allen Stufen. Damit ist `par` exakt die Steinzahl („ein Tipp pro
-Stein“), die lesbarste Par-Definition, die dieses Spiel haben kann. Sprungketten (`maxChain`,
-`wChain`) sind die einzige Schwierigkeitsquelle; die Sterneschwellen sind deshalb eng und stehen
-in dieser Tabelle, nicht im Code.
+`par` ist damit exakt die Steinzahl („ein Tipp pro Stein“) — unter Regelversion 3 kann ein
+Stein den Turm nur in genau einem Zug verlassen, mehr Zuege gibt es nicht zu vergeben. Die
+Sterneschwellen sind deshalb eng und stehen in dieser Tabelle, nicht im Code.
 
-Baender (`spec.bands`): `naivePerPar [1.08, 1.60]`, `chainShare [0.15, 0.70]`,
-`mobility [0.12, 0.80]`, `trivialExit [0.00, 0.45]`.
+**Woher die Schwierigkeit kommt.** Nicht aus der Reihenfolge: nach der Monotonie in §1.3 fuehrt
+jede Folge gueltiger Zuege zum Ziel. Sie kommt aus dem **Finden** — in einem dichten Turm ist
+einem Pfeil nicht anzusehen, ob seine Bahn frei ist, erst recht nicht im Modus VOLUMEN, wo
+Pfeile ins Innere zeigen. Die Stellschraube ist deshalb die Kennzahl `mobility`: der Anteil der
+Steine, die gerade ziehen koennen. Hohe Dichte und viele nach innen gerichtete Pfeile druecken
+sie und machen das Level schwerer.
+
+Baender (`spec.bands`): `naivePerPar [0.00, 1.00]`, `mobility [0.00, 1.00]`.
+
+`metrics` traegt nur noch drei Kennzahlen: `density` (Anteil belegter **Zellen**), `mobility`
+und `naivePerPar`. `chainShare`, `maxChain` und `trivialExit` sind mit den Sprungketten
+entfallen. `naivePerPar` misst, wie weit ein Spieler kommt, der einfach irgendeinen ziehbaren
+Stein antippt: 1.0 heisst „loest sich von selbst“, kleiner heisst „wer nicht hinschaut, sitzt
+fest“ — in ABBAU ist der Wert wegen der Monotonie stets 1.0, in BEFREIUNG nicht.
 
 ---
 
@@ -2520,6 +2515,15 @@ Zusatzfaelle:
    Wuerfeln und nie eine Groesse ueber dem Deckel aus §6.11.
 
 ### 10.4 `tests/verify.test.js` — Fuzz-Harness (die zentrale Garantiepruefung)
+
+**Fuellgrad, normativ.** Der Median des Fuellgrads MUSS `density - 0.02` erreichen. Fuer das
+Minimum gilt eine absolute Untergrenze von `0.75`, nicht `density - 0.05`. Grund: unter
+Regelversion 3 laesst sich eine Zelle nur besetzen, wenn von ihr aus eine ganze Bahn bis zum
+Rand frei ist. Der Fuellrueckfall aus §6.5 garantiert das nur auf dem leeren Brett — nach der
+Hauptschleife koennen einzelne Loecher tief in einer Wand liegen, deren Bahnen samt und sonders
+verstellt sind. Solche Loecher bleiben offen; betroffen sind wenige Seeds. Die Garantie, die
+zaehlt — jedes ausgelieferte Level ist loesbar und verifiziert — gilt davon unberuehrt in
+jedem Fall.
 
 ```
 fuer seed in 0 .. 9999:

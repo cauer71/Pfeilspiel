@@ -77,7 +77,7 @@ test('1. tap erhoeht moves nur bei gueltigen Zuegen; taps enthaelt auch unguelti
   const blockiert = tap(s2, X(0));
   assert.equal(blockiert.kind, 'INVALID');
   assert.equal(blockiert.reason, 'BLOCKED');
-  assert.deepEqual(blockiert.jumped, [X(1)]);
+  assert.deepEqual(blockiert.blocker, [X(1)], 'der erste Blockierer wird benannt');
   assert.equal(s2.moves, 0);
   assert.equal(s2.taps.length, 1);
 });
@@ -286,13 +286,13 @@ test('8. jeder Zug veraendert genau einen Wuerfel (RF-12)', () => {
     let geaendert = 0;
     for (let id = 0; id < nachher.cubeCount; id++)
       if (vorher.cellOf[id] !== nachher.cellOf[id] || vorher.alive[id] !== nachher.alive[id]) geaendert++;
-    assert.equal(geaendert, 1, 'genau ein Wuerfel bewegt sich');
+    assert.equal(geaendert, 1, 'genau ein Stein verlaesst den Turm');
     assert.equal(m.path[0], m.from);
-    if (m.kind === 'STEP') assert.equal(m.path.length, 2);
-    if (m.kind === 'JUMP') assert.equal(m.path.length, m.jumps + 1);
-    // Uebersprungene Wuerfel bleiben unberuehrt.
-    for (const zelle of m.jumped)
-      if (m.to !== zelle) assert.equal(vorher.occ[zelle], nachher.occ[zelle]);
+    assert.equal(m.kind, 'EXIT', 'die Regel kennt nur EXIT und INVALID');
+    assert.deepEqual(m.blocker, []);
+    // Die Bahn war frei und bleibt es: kein anderer Stein wird beruehrt.
+    for (let k = 1; k < m.path.length; k++)
+      assert.equal(nachher.occ[m.path[k]], -1, 'die Bahn ist nach dem Zug leer');
   }
   assert.equal(s.won, true);
   assert.equal(resolveMove(board, s.state, level.witness[0]).kind, 'INVALID');

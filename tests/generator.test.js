@@ -14,7 +14,7 @@ import {
   GEN_VERSION, generateLevel, generateFromCode, generateForLevelNo,
   verifyLevel, replayTaps, solveGreedy,
   levelSpecFor, encodeLevelCode, parseLevelCode, encodeHash, parseHash,
-  measureLevel, fillByDepth, pruefeUnExit, pruefeUnRelocate,
+  measureLevel, fillByDepth, pruefeUnExit,
   mulberry32
 } from '../public/src/levels.js';
 
@@ -22,7 +22,7 @@ import {
 
 const vol = (W, H, D) => buildBoard({ mode: 'VOLUMEN', W, H, D });
 const V = (b, x, y, z) => cellIndexOf(b, `V:${x}:${y}:${z}`);
-const PX = 0, PY = 2;
+const PX = 0, NX = 1, PY = 2;
 
 /** Reihe y=0, z=0 eines VOLUMEN-Bretts. */
 const X = (b, x) => V(b, x, 0, 0);
@@ -50,112 +50,58 @@ function spiele(board, state, zellen) {
 // ihn verwerfen. Diese sechs Tests sind die einzige Absicherung dagegen, dass ein
 // spaeterer Umbau des Generators die Loesbarkeitsgarantie stumm bricht.
 
-test('N1 Ketten-Ueberschuss: die Kette laeuft ueber das geplante Ziel hinaus', () => {
+// Unter RULE_VERSION 3 gibt es weder Schritt noch Sprung. Von den sechs Ausfallarten der
+// Versionen 1 und 2 bleibt genau eine uebrig, und sie ist die wichtigste: der Kandidat MUSS
+// im Zustand zur Zugzeit beurteilt werden, nicht im spaeteren Endzustand. Die uebrigen
+// betrafen ausschliesslich Sprungketten und die zweite Rueckwaertsoperation; beides ist
+// entfallen (SPEC §6.2, §6.3).
+
+test('N1 Blockierte Platzierung: der Kandidatentest verwirft sie', () => {
   const b = vol(5, 2, 3);
-  // q steht auf X2; Traeger auf X1 und X3, X4 frei.
-  const st = zustand(b, [
-    { cell: X(b, 1), dir: PX },
-    { cell: X(b, 2), dir: PX },   // cubeId 1 = q
-    { cell: X(b, 3), dir: PX }
-  ]);
-  const pr = pruefeUnRelocate(b, st, 1, X(b, 0), X(b, 2), 4);
-  assert.equal(pr.move.kind, 'JUMP');
-  assert.equal(pr.move.to, X(b, 4), 'Kette schiesst ueber B hinaus');
+  const st = zustand(b, [{ cell: X(b, 3), dir: PX }]);
+  // Ein Stein bei x=1 nach +X trifft bei x=3 auf den vorhandenen: kein Austritt.
+  const pr = pruefeUnExit(b, st, X(b, 1), PX);
   assert.equal(pr.ok, false);
-  // Der Zustand ist nach der Pruefung unveraendert.
-  assert.equal(st.occ[X(b, 2)], 1);
-  assert.equal(st.occ[X(b, 0)], EMPTY);
+  assert.equal(pr.move.kind, 'INVALID');
+  assert.deepEqual(pr.move.blocker, [X(b, 3)]);
+
+  // Dieselbe Zelle mit freier Bahn nach -X wird angenommen.
+  const frei = pruefeUnExit(b, st, X(b, 1), NX);
+  assert.equal(frei.ok, true);
+  assert.equal(frei.move.kind, 'EXIT');
 });
 
-test('N2 Ketten-Unterschuss: die Kette stoppt vor dem geplanten Ziel', () => {
+test('N2 Zustandsdrift: geprueft wird der Zustand zur Zugzeit, nicht der Endzustand', () => {
   const b = vol(5, 2, 3);
-  const st = zustand(b, [
-    { cell: X(b, 1), dir: PX },
-    { cell: X(b, 4), dir: PX }    // cubeId 1 = q
-  ]);
-  const pr = pruefeUnRelocate(b, st, 1, X(b, 0), X(b, 4), 4);
-  assert.equal(pr.move.kind, 'JUMP');
-  assert.equal(pr.move.to, X(b, 2), 'Kette endet zu frueh, weil X3 frei ist');
-  assert.equal(pr.ok, false);
+  // Duenner Zustand: die Bahn nach +X ist frei, der Kandidat wird angenommen.
+  const duenn = emptyState(b, b.C, 'ABBAU');
+  assert.equal(pruefeUnExit(b, duenn, X(b, 1), PX).ok, true);
+
+  // Dichterer Zustand (spaeter im Rueckwaertsbau): derselbe Kandidat ist blockiert.
+  // Wer gegen den Endzustand prueft, verwirft ihn faelschlich - und wer umgekehrt einen
+  // im Endzustand gueltigen Kandidaten annimmt, baut ein unloesbares Level.
+  const dicht = zustand(b, [{ cell: X(b, 3), dir: PX }]);
+  assert.equal(pruefeUnExit(b, dicht, X(b, 1), PX).ok, false);
 });
 
-test('N3 Schritt statt Sprung: A+d ist frei, die Regel liefert STEP', () => {
-  const b = vol(5, 2, 3);
-  // Der Blocker bei x=4 ist ab RULE_VERSION 2 noetig: ohne ihn waere die Bahn frei und
-  // die Regel lieferte einen Austritt durch Rutschen (R0) statt eines Schrittes.
-  const st = zustand(b, [{ cell: X(b, 2), dir: PX }, { cell: X(b, 4), dir: PX }]);
-  const pr = pruefeUnRelocate(b, st, 0, X(b, 0), X(b, 2), 4);
-  assert.equal(pr.move.kind, 'STEP');
-  assert.equal(pr.move.to, X(b, 1));
-  assert.equal(pr.ok, false);
+test('N3 Feste Pfeile: geprueft wird genau die uebergebene Richtung', () => {
+  const b = vol(5, 3, 3);
+  const st = zustand(b, [{ cell: V(b, 3, 1, 0), dir: PX }]);
+  const zelle = V(b, 1, 1, 0);
+  // Nach +X blockiert, nach oben frei: die Regel darf sich die Richtung nicht aussuchen.
+  assert.equal(pruefeUnExit(b, st, zelle, PX).ok, false);
+  assert.equal(pruefeUnExit(b, st, zelle, PY).ok, true);
 });
 
-test('N4 Feste Pfeile: unRelocate benutzt die BESTEHENDE Richtung des Wuerfels', () => {
-  const b = vol(5, 5, 3);
-  const bZelle = V(b, 2, 1, 0);
-  const aZelle = V(b, 1, 1, 0);
-  // Zwei ruhende Blocker halten beide Bahnen verstellt; ab RULE_VERSION 2 wuerde die
-  // Regel sonst rutschen lassen statt einen Schritt zu liefern.
-  const blockerOben = { cell: V(b, 1, 3, 0), dir: PY };
-  const blockerRechts = { cell: V(b, 4, 1, 0), dir: PX };
-
-  // q zeigt nach oben (PY). Der naive Kandidat entlang der X-Achse setzt stillschweigend
-  // eine frei gewaehlte Richtung voraus und ist deshalb zu verwerfen.
-  const stPY = zustand(b, [{ cell: bZelle, dir: PY }, blockerOben, blockerRechts]);
-  const prPY = pruefeUnRelocate(b, stPY, 0, aZelle, bZelle, 4);
-  assert.equal(prPY.move.kind, 'STEP');
-  assert.equal(prPY.move.to, V(b, 1, 2, 0), 'der Wuerfel zieht nach oben, nicht nach B');
-  assert.equal(prPY.ok, false);
-
-  // Gegenprobe: mit frei gewaehlter Richtung PX waere derselbe Kandidat akzeptiert worden.
-  const stPX = zustand(b, [{ cell: bZelle, dir: PX }, blockerOben, blockerRechts]);
-  const prPX = pruefeUnRelocate(b, stPX, 0, aZelle, bZelle, 4);
-  assert.equal(prPX.ok, true);
-  assert.equal(prPX.move.to, bZelle);
+test('N4 Ein 2x1-Kandidat wird nur angenommen, wenn BEIDE Spuren frei sind', () => {
+  const b = vol(6, 4, 3);
+  const st = zustand(b, [{ cell: V(b, 3, 1, 0), dir: PX }]);
+  // Anker (0,0,0), Ausleger nach oben: die obere Spur trifft auf den Blocker.
+  assert.equal(pruefeUnExit(b, st, V(b, 0, 0, 0), PX, PY).ok, false);
+  // Ohne Blocker geht derselbe Stein.
+  const leer = emptyState(b, b.C, 'ABBAU');
+  assert.equal(pruefeUnExit(b, leer, V(b, 0, 0, 0), PX, PY).ok, true);
 });
-
-test('N5 Zustandsdrift: geprueft wird der Zustand zur Zugzeit, nicht der Endzustand', () => {
-  // Ab RULE_VERSION 2 macht ein duennerer Zustand einen Austritt eher moeglich, nicht
-  // seltener. Der Nachweis der Zustandsdrift laeuft deshalb ueber die Sprungkette: sie
-  // traegt den Wuerfel nur dann hinaus, wenn der zweite Traeger schon steht.
-  const b = vol(5, 2, 3);
-  const duenn = zustand(b, [{ cell: X(b, 2), dir: PX }]);          // nur ein Traeger
-  const prDuenn = pruefeUnExit(b, duenn, X(b, 1), PX, 4);
-  assert.equal(prDuenn.move.kind, 'JUMP', 'im Zustand zur Zugzeit endet die Kette im Gitter');
-  assert.equal(prDuenn.ok, false);
-
-  const dicht = zustand(b, [{ cell: X(b, 2), dir: PX }, { cell: X(b, 4), dir: PX }]);
-  const prDicht = pruefeUnExit(b, dicht, X(b, 1), PX, 4);
-  assert.equal(prDicht.move.kind, 'EXIT');
-  assert.equal(prDicht.move.jumps, 2);
-  assert.equal(prDicht.ok, true, 'gegen den Endzustand geprueft saehe der Kandidat gut aus');
-});
-
-test('N6 Austritts-Umkehr: im dichteren Zustand tritt der Wuerfel nicht mehr aus', () => {
-  const b = vol(5, 2, 3);
-  const frueher = zustand(b, [{ cell: X(b, 2), dir: PX }, { cell: X(b, 4), dir: PX }]);
-  const prFrueh = pruefeUnExit(b, frueher, X(b, 1), PX, 4);
-  assert.equal(prFrueh.move.kind, 'EXIT');
-  assert.equal(prFrueh.move.jumps, 2);
-  assert.equal(prFrueh.ok, true);
-
-  const spaeter = zustand(b, [
-    { cell: X(b, 2), dir: PX }, { cell: X(b, 3), dir: PX }, { cell: X(b, 4), dir: PX }
-  ]);
-  const prSpaet = pruefeUnExit(b, spaeter, X(b, 1), PX, 4);
-  assert.equal(prSpaet.move.kind, 'INVALID');
-  assert.equal(prSpaet.move.reason, 'BLOCKED');
-  assert.equal(prSpaet.ok, false, 'die Landezelle wurde inzwischen belegt');
-});
-
-test('N-Fixtures: maxChain wird im Kandidatenfilter durchgesetzt, nicht als Nachfilter', () => {
-  const b = vol(5, 2, 3);
-  const st = zustand(b, [{ cell: X(b, 2), dir: PX }, { cell: X(b, 4), dir: PX }]);
-  assert.equal(pruefeUnExit(b, st, X(b, 1), PX, 2).ok, true);
-  assert.equal(pruefeUnExit(b, st, X(b, 1), PX, 1).ok, false, 'jumps=2 ueber maxChain=1');
-});
-
-// --- 2. Prepend-Semantik (SPEC §10.3.2) ---------------------------------
 
 /** Minimales, von Hand nachgerechnetes Level. */
 function handLevel(b, cubes, witness) {
@@ -167,7 +113,7 @@ function handLevel(b, cubes, witness) {
     levelCode: encodeLevelCode({ mode: b.mode, goal: 'ABBAU', W: b.W, H: b.H, D: b.D, attempt: 0, seed: 1 }),
     cubes, targetId: null, witness, par,
     stars: [par, par, par],
-    metrics: { density: 0, chainShare: 0, maxChain: 0, mobility: 0, naivePerPar: 0, trivialExit: 0 }
+    metrics: { density: 0, mobility: 0, naivePerPar: 0 }
   };
 }
 
@@ -225,7 +171,7 @@ test('3. fillByDepth fuellt das leere Brett zu 100 Prozent und raeumt es restlos
       // Genau ein Austritt je Wuerfel; alle uebrigen Referenzzuege sind Schritte im
       // freien Korridor (siehe Kommentar zu austrittsfolge in levels.js).
       assert.equal(info.filter((e) => e.kind === 'EXIT').length, board.C);
-      for (const e of info) assert.ok(e.kind === 'EXIT' || e.kind === 'STEP', e.kind);
+      for (const e of info) assert.equal(e.kind, 'EXIT', 'der Fuellrueckfall erzeugt nur Austritte');
 
       // Die Referenz ist vom Startzustand aus vollstaendig legal und raeumt den Turm ab.
       const cubes = [];
@@ -248,7 +194,7 @@ test('3. fillByDepth fuellt das leere Brett zu 100 Prozent und raeumt es restlos
 /** SPEC §10.3.4 verlangt 100 Level je Modus und Zielmodus. */
 const LEVEL_JE_KOMBINATION = 100;
 
-test('4. Kennzahlen: maxChain, Dichte, restloser Abbau, Befreiungspraefix', () => {
+test('4. Kennzahlen: Dichte, restloser Abbau, Befreiungspraefix', () => {
   for (const mode of ['FASSADE', 'VOLUMEN']) {
     for (const goal of ['ABBAU', 'BEFREIUNG']) {
       for (let i = 0; i < LEVEL_JE_KOMBINATION; i++) {
@@ -264,7 +210,6 @@ test('4. Kennzahlen: maxChain, Dichte, restloser Abbau, Befreiungspraefix', () =
         // Die Sollwerte kommen aus dem Levelcode, also aus genau der Quelle, aus der auch
         // der Worker das Level regeneriert.
         const soll = parseLevelCode(level.levelCode);
-        assert.ok(level.metrics.maxChain <= soll.maxChain, `${mode}/${goal}/${i}: maxChain`);
 
         // Dichte = Anteil belegter ZELLEN. Ein 2x1-Stein belegt zwei; die Steinzahl
         // allein waere von der Steinform abhaengig (SPEC §3.5).
@@ -277,12 +222,12 @@ test('4. Kennzahlen: maxChain, Dichte, restloser Abbau, Befreiungspraefix', () =
         assert.ok(Math.abs(level.metrics.density - dichte) < 0.005,
           `${mode}/${goal}/${i}: metrics.density ${level.metrics.density} vs ${dichte}`);
 
-        // Kein Referenzzug ueberschreitet maxChain der Spec.
+        // Jeder Referenzzug ist ein Austritt; mehr kennt die Regel nicht.
         const state = createState(board, level.cubes, goal);
         const zuege = spiele(board, state, level.witness);
         for (const m of zuege) {
           assert.notEqual(m.kind, 'INVALID');
-          assert.ok(m.jumps <= soll.maxChain, `${mode}/${goal}/${i}: jumps ${m.jumps}`);
+          assert.equal(m.kind, 'EXIT', `${mode}/${goal}/${i}: ${m.kind}`);
         }
         if (goal === 'ABBAU') {
           assert.equal(state.aliveCount, 0, 'ABBAU raeumt den Turm restlos ab');
@@ -308,7 +253,7 @@ test('5. erzwungene Sackgasse: Fuellrueckfall greift und liefert ein verifiziert
   // Fuellrueckfall aus SPEC §6.5 erreichbar.
   const level = generateLevel({
     seed: 4242, attempt: 0, mode: 'VOLUMEN', goal: 'ABBAU',
-    W: 5, H: 5, D: 5, density: 1.0, maxChain: 1, dominoRate: 0
+    W: 5, H: 5, D: 5, density: 1.0, dominoRate: 0
   });
   const board = buildBoard({ mode: 'VOLUMEN', W: 5, H: 5, D: 5 });
   assert.equal(level.cubes.length, board.C, 'das Gitter ist vollstaendig gefuellt');
@@ -320,29 +265,24 @@ test('5. erzwungene Sackgasse: Fuellrueckfall greift und liefert ein verifiziert
   assert.equal(verifyLevel(level).ok, true);
 
   const state = createState(board, level.cubes, 'ABBAU');
-  for (const m of spiele(board, state, level.witness)) assert.ok(m.jumps <= 1);
+  for (const m of spiele(board, state, level.witness)) assert.equal(m.kind, 'EXIT');
   assert.equal(state.aliveCount, 0);
 });
 
-test('5b. unRelocate erzeugt par > N und bleibt verifizierbar', () => {
-  // Standardmaessig ist relocateRate 0 (SPEC §6.11). Der Zweig darf trotzdem nicht
-  // ungetestet bleiben: er ist die zweite Rueckwaertsoperation aus SPEC §6.3.
-  for (const seed of [1, 2, 3]) {
-    const level = generateLevel({
-      seed, attempt: 0, mode: 'VOLUMEN', goal: 'ABBAU',
-      W: 4, H: 4, D: 4, relocateRate: 0.8
-    });
-    assert.equal(verifyLevel(level).ok, true, 'seed ' + seed);
-    assert.ok(level.par > level.cubes.length, 'zurueckgezogene Wuerfel kosten Extrazuege');
-
-    const board = buildBoard({ mode: 'VOLUMEN', W: 4, H: 4, D: 4 });
-    const state = createState(board, level.cubes, 'ABBAU');
-    for (const m of spiele(board, state, level.witness)) assert.notEqual(m.kind, 'INVALID');
-    assert.equal(state.aliveCount, 0);
+test('5b. par ist genau die Steinzahl: ein Tipp je Stein', () => {
+  // Unter RULE_VERSION 3 verlaesst ein Stein den Turm in genau einem Zug oder gar nicht.
+  // Die Referenzloesung kann deshalb nie mehr Zuege haben als es Steine gibt - und in
+  // ABBAU auch nie weniger, weil jeder Stein heraus muss.
+  for (const n of [3, 7, 14, 26, 44]) {
+    const level = generateForLevelNo(n);
+    assert.equal(verifyLevel(level).ok, true, `Level ${n}`);
+    if (level.goal === 'ABBAU') {
+      assert.equal(level.par, level.cubes.length, `Level ${n}: par !== Steinzahl`);
+    } else {
+      assert.ok(level.par >= 1 && level.par <= level.cubes.length, `Level ${n}: par ausserhalb`);
+    }
   }
 });
-
-// --- 6. Codes (SPEC §10.3.6) --------------------------------------------
 
 test('6. parseLevelCode(encodeLevelCode(spec)) ist die Identitaet', () => {
   const felder = ['mode', 'goal', 'W', 'H', 'D', 'attempt', 'seed'];
@@ -356,7 +296,7 @@ test('6. parseLevelCode(encodeLevelCode(spec)) ist die Identitaet', () => {
       for (const f of felder) assert.deepEqual(zurueck[f], spec[f], f + ' in ' + code);
       // Auch die abgeleiteten Generatorparameter muessen sich ergeben.
       assert.equal(zurueck.density, spec.density);
-      assert.equal(zurueck.maxChain, spec.maxChain);
+      assert.equal(zurueck.dominoRate, spec.dominoRate);
       assert.equal(zurueck.targetQuantile, spec.targetQuantile);
 
       const hash = encodeHash(spec);
@@ -368,7 +308,7 @@ test('6. parseLevelCode(encodeLevelCode(spec)) ist die Identitaet', () => {
   assert.equal(encodeLevelCode({ mode: 'FASSADE', goal: 'ABBAU', W: 4, H: 5, D: 4, attempt: 0, seed: 0x0008FA3C }),
     'F-A-4x5x4-0-0008FA3C');
   assert.equal(encodeHash({ mode: 'FASSADE', goal: 'ABBAU', W: 5, H: 7, D: 5, attempt: 0, seed: 0x8fa3c }),
-    '#s=8fa3c&m=FASSADE&g=ABBAU&d=5x7x5&a=0&r=2&gv=2');
+    '#s=8fa3c&m=FASSADE&g=ABBAU&d=5x7x5&a=0&r=3&gv=3');
 
   assert.throws(() => parseLevelCode('X-A-4x5x4-0-0008FA3C'), Error);
   assert.throws(() => parseLevelCode('F-A-4x5x4-12-0008FA3C'), Error);
@@ -424,8 +364,7 @@ test('8. levelSpecFor haelt MAX_CUBES und die Groessendeckel fuer n in [1,500]',
     const board = buildBoard({ mode: spec.mode, W: spec.W, H: spec.H, D: spec.D });
     assert.ok(board.C <= MAX_CUBES);
     assert.ok(Math.round(spec.density * board.C) <= MAX_CUBES);
-    assert.ok(spec.maxChain >= 1 && spec.maxChain <= 4);
-    assert.equal(spec.relocateRate, 0);
+    assert.ok(spec.dominoRate >= 0 && spec.dominoRate <= 1);
   }
   // Stichprobe: die erzeugten Level bleiben unter der Obergrenze.
   for (const n of [1, 9, 19, 31, 41, 200, 500]) {
@@ -450,7 +389,7 @@ test('9. solveGreedy endet an Generatorleveln nie ohne einen einzigen Zug', () =
       assert.equal(state.aliveCount, level.cubes.length, 'solveGreedy arbeitet auf einer Kopie');
     }
     const kennz = measureLevel(board, level, 5);
-    for (const s of ['density', 'chainShare', 'maxChain', 'mobility', 'naivePerPar', 'trivialExit'])
+    for (const s of ['density', 'mobility', 'naivePerPar'])
       assert.ok(Number.isFinite(kennz[s]), s);
   }
 });
@@ -484,5 +423,5 @@ test('10. generateLevel liefert nur verifizierte Level aus', () => {
 test('10b. OUT und EMPTY bleiben die vereinbarten Sentinelwerte', () => {
   assert.equal(OUT, -1);
   assert.equal(EMPTY, -1);
-  assert.equal(GEN_VERSION, 2);
+  assert.equal(GEN_VERSION, 3);
 });

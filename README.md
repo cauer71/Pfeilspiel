@@ -1,10 +1,10 @@
 # Pfeilspiel
 
 Ein dreidimensionales Denkspiel im Browser: ein Turm aus weißen Steinen, jeder mit einem
-schwarzen Pfeil. Ein Tipp schickt den Stein in seine Pfeilrichtung — bei freier Bahn gleich
-ganz aus dem Turm, sonst einen Schritt weit oder als Halma-Sprung über einen Nachbarn hinweg.
-Neben einzelnen Würfeln gibt es längliche Steine, die zwei Felder belegen. Der Turm lässt sich
-frei drehen und zoomen.
+schwarzen Pfeil. Ein Tipp schickt den Stein in seine Pfeilrichtung aus dem Turm — aber nur,
+wenn seine Bahn frei ist. Steht irgendwo davor ein anderer Stein, passiert nichts. Neben
+einzelnen Würfeln gibt es längliche Steine, die zwei Felder belegen. Der Turm lässt sich frei
+drehen und zoomen.
 
 Kein Build-Schritt, keine Laufzeitabhängigkeiten, reines ES-Modul-JavaScript.
 Three.js liegt selbst gehostet im Repository.
@@ -18,20 +18,24 @@ feste Richtung `d`. Er bewegt sich immer als Ganzes.
 
 | | Regel |
 |---|---|
-| **Rutschen** | Die Bahn in Pfeilrichtung ist bis zum Rand frei → der Stein verlässt den Turm sofort ganz. |
-| **Schritt** | Das nächste Feld ist frei, die Bahn danach verstellt → der Stein rückt genau ein Feld vor. Ein Schritt kettet nie. |
-| **Sprung** | Das nächste Feld ist besetzt, das Feld dahinter frei → Sprung darüber hinweg. |
-| **Kette** | Nach einem Sprung geht es weiter, solange von der aktuellen Lage aus wieder gesprungen werden kann. Die Kette ist zwingend. |
-| **Ungültig** | Weder das eine noch das andere möglich → kein Zug, nur eine Wackelanimation. |
-| **Austritt** | Verlässt der Stein das Gitter, fliegt er weg. Halb draußen bleibt nie einer stehen. |
+| **Austritt** | Die Bahn in Pfeilrichtung ist bis zum Rand frei → der Stein verlässt den Turm ganz, in genau einem Zug. |
+| **Ungültig** | Steht irgendwo auf dieser Bahn ein anderer Stein → nichts passiert, der Stein wackelt nur und der Blockierer blitzt rot auf. |
 
-Ein 2×1-Stein braucht **alle** Zielfelder frei, blockiert entsprechend zwei Felder und kann
-sich nicht selbst im Weg stehen: beim Zug längs seiner eigenen Achse zählt die Zelle, die er
-gerade verlässt, als frei.
+**Es gibt weder Schritt noch Sprung.** Ein blockierter Stein bleibt blockiert, bis sein
+Blockierer selbst gegangen ist — genau darin besteht das Spiel.
+
+Ein 2×1-Stein braucht seine **ganze Bahn auf beiden Spuren** frei und blockiert entsprechend
+zwei Felder. Längs seiner eigenen Achse steht er sich nicht selbst im Weg.
 
 Es gibt **keine Schwerkraft**: verbleibende Steine schweben an Ort und Stelle.
-Ein Zug verändert genau einen Stein und lässt seine Form unverändert, übersprungene bleiben
-unberührt — deshalb ist Rückgängig exakt invers und beliebig tief.
+Ein Zug entfernt genau einen Stein, alle anderen bleiben unberührt — deshalb ist Rückgängig
+exakt invers und beliebig tief.
+
+Weil ein Austritt nur Felder freiräumt und nie eines belegt, kann ein Stein, der einmal ziehen
+konnte, das immer noch. Ein lösbares Level lässt sich also nicht durch eine ungeschickte
+Reihenfolge verderben. Die Schwierigkeit liegt im **Finden**: einem Pfeil ist im dichten Turm
+nicht anzusehen, ob seine Bahn frei ist — erst recht nicht im Modus *Volumen*, wo Pfeile ins
+Innere zeigen.
 
 ### Richtungsmodi
 

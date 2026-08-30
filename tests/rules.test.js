@@ -1,4 +1,8 @@
-// SPEC §10.2 — Zugregel. Tabellengetriebene Fixtures fuer RF-1 bis RF-12 aus §1.3.
+// SPEC §10.2 — Zugregel (RULE_VERSION 3).
+//
+// Die Regel kennt nur noch zwei Ausgaenge: der Stein verlaesst den Turm (EXIT) oder es
+// passiert nichts (INVALID). Weder Schritt noch Sprung: ist die Bahn in Pfeilrichtung
+// irgendwo verstellt, bleibt der Stein stehen.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -7,7 +11,7 @@ import {
   createState, emptyState, cloneState, addCube, dropCube, isFree,
   resolveMove, applyMove, revertMove, legalCells, mobility, hasAnyMove, isSolved,
   createSession, tap, undo, restart, toRunLog,
-  OUT, EMPTY, RULE_VERSION
+  OUT, EMPTY, EXT_NONE, RULE_VERSION
 } from '../public/src/game.js';
 
 // --- Werkzeug -----------------------------------------------------------
@@ -40,109 +44,60 @@ function snap(state) {
   };
 }
 
-// Reihe y=0, z=0 eines VOLUMEN-Bretts: bequeme Achse fuer alle Sprungfaelle.
+// Reihe y=0, z=0 eines VOLUMEN-Bretts: bequeme Achse fuer alle Faelle.
 const B3 = vol(3, 2, 3), B4 = vol(4, 2, 3), B5 = vol(5, 2, 3), B7 = vol(7, 2, 3), B9 = vol(9, 2, 3);
 const X = (b, x) => V(b, x, 0, 0);
 const PX = 0;   // Richtung +X
+const NX = 1, PY = 2, NY = 3;
 
-// --- RF-1 bis RF-12 als Tabelle ----------------------------------------
+// --- RF-1 bis RF-6 als Tabelle -----------------------------------------
 
 const FIXTURES = [
   {
-    name: 'RF-1: n1 ausserhalb -> EXIT, Belegung wird nicht geprueft',
+    name: 'RF-1: der Stein steht am Rand und zeigt hinaus -> EXIT ohne Zwischenstation',
     board: B5,
     cubes: b => [{ cell: X(b, 4), dir: PX }],
     tap: b => X(b, 4),
-    move: b => ({ kind: 'EXIT', cubeId: 0, from: X(b, 4), to: OUT, jumps: 0, path: [X(b, 4)], jumped: [] })
+    move: b => ({ kind: 'EXIT', cubeId: 0, from: X(b, 4), to: OUT, path: [X(b, 4)], blocker: [] })
   },
   {
-    // Der Blocker bei x=3 ist wesentlich: ohne ihn waere die Bahn frei und R0 (Rutschen)
-    // wuerde greifen. Genau ein Feld vor rueckt der Wuerfel nur bei verstellter Bahn.
-    name: 'RF-2: n1 frei, Bahn danach verstellt -> STEP, keine Verkettung',
-    board: B5,
-    cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 3), dir: PX }],
-    tap: b => X(b, 0),
-    move: b => ({ kind: 'STEP', cubeId: 0, from: X(b, 0), to: X(b, 1), jumps: 0, path: [X(b, 0), X(b, 1)], jumped: [] })
-  },
-  {
-    name: 'RF-2b: Bahn bis zum Rand frei -> EXIT durch Rutschen, jumps 0',
+    name: 'RF-2: die ganze Bahn ist frei -> EXIT, path nennt jede durchlaufene Zelle',
     board: B5,
     cubes: b => [{ cell: X(b, 0), dir: PX }],
     tap: b => X(b, 0),
     move: b => ({
-      kind: 'EXIT', cubeId: 0, from: X(b, 0), to: OUT, jumps: 0,
-      path: [X(b, 0), X(b, 1), X(b, 2), X(b, 3), X(b, 4)], jumped: []
+      kind: 'EXIT', cubeId: 0, from: X(b, 0), to: OUT,
+      path: [X(b, 0), X(b, 1), X(b, 2), X(b, 3), X(b, 4)], blocker: []
     })
   },
   {
-    name: 'RF-3: n1 besetzt, n2 ausserhalb -> EXIT (Sprung ueber den Rand hinaus)',
+    name: 'RF-3a: der direkte Nachbar ist besetzt -> INVALID, kein Sprung',
     board: B5,
     cubes: b => [{ cell: X(b, 3), dir: PX }, { cell: X(b, 4), dir: PX }],
     tap: b => X(b, 3),
-    move: b => ({ kind: 'EXIT', cubeId: 0, from: X(b, 3), to: OUT, jumps: 1, path: [X(b, 3)], jumped: [X(b, 4)] })
+    move: b => ({
+      kind: 'INVALID', reason: 'BLOCKED', cubeId: 0, from: X(b, 3), to: OUT,
+      path: [X(b, 3)], blocker: [X(b, 4)]
+    })
   },
   {
-    name: 'RF-4: n1 und n2 besetzt -> INVALID/BLOCKED, jumped nennt den Blockierer',
+    name: 'RF-3b: der Blocker steht weiter vorn -> INVALID, kein Schritt',
     board: B5,
-    cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 1), dir: PX }, { cell: X(b, 2), dir: PX }],
+    cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 3), dir: PX }],
     tap: b => X(b, 0),
     move: b => ({
       kind: 'INVALID', reason: 'BLOCKED', cubeId: 0, from: X(b, 0), to: OUT,
-      jumps: 0, path: [X(b, 0)], jumped: [X(b, 1)]
+      path: [X(b, 0)], blocker: [X(b, 3)]
     })
   },
   {
-    name: 'RF-5: Kette endet, weil cur+d ausserhalb liegt',
-    board: B3,
-    cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 1), dir: PX }],
-    tap: b => X(b, 0),
-    move: b => ({ kind: 'JUMP', cubeId: 0, from: X(b, 0), to: X(b, 2), jumps: 1, path: [X(b, 0), X(b, 2)], jumped: [X(b, 1)] })
-  },
-  {
-    name: 'RF-6: kein Schritt hinter dem Sprung, obwohl cur+d frei und im Gitter ist',
-    board: B5,
-    cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 1), dir: PX }],
-    tap: b => X(b, 0),
-    move: b => ({ kind: 'JUMP', cubeId: 0, from: X(b, 0), to: X(b, 2), jumps: 1, path: [X(b, 0), X(b, 2)], jumped: [X(b, 1)] })
-  },
-  {
-    name: 'RF-7: EXIT mitten aus der Kette heraus',
-    board: B4,
-    cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 1), dir: PX }, { cell: X(b, 3), dir: PX }],
-    tap: b => X(b, 0),
-    move: b => ({
-      kind: 'EXIT', cubeId: 0, from: X(b, 0), to: OUT, jumps: 2,
-      path: [X(b, 0), X(b, 2)], jumped: [X(b, 1), X(b, 3)]
-    })
-  },
-  {
-    name: 'RF-8: Kette endet, weil cur+2d besetzt ist',
-    board: B5,
-    cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 1), dir: PX },
-                 { cell: X(b, 3), dir: PX }, { cell: X(b, 4), dir: PX }],
-    tap: b => X(b, 0),
-    move: b => ({ kind: 'JUMP', cubeId: 0, from: X(b, 0), to: X(b, 2), jumps: 1, path: [X(b, 0), X(b, 2)], jumped: [X(b, 1)] })
-  },
-  {
-    name: 'RF-9: leere Zelle -> INVALID/DEAD',
+    name: 'RF-4: leere Zelle -> INVALID/DEAD',
     board: B5,
     cubes: b => [{ cell: X(b, 0), dir: PX }],
     tap: b => X(b, 2),
     move: b => ({
       kind: 'INVALID', reason: 'DEAD', cubeId: EMPTY, from: X(b, 2), to: OUT,
-      jumps: 0, path: [X(b, 2)], jumped: []
-    })
-  },
-  {
-    name: 'RF-11: Kette laeuft ueber die ganze Reihe und endet dennoch',
-    board: B9,
-    cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 1), dir: PX }, { cell: X(b, 3), dir: PX },
-                 { cell: X(b, 5), dir: PX }, { cell: X(b, 7), dir: PX }],
-    tap: b => X(b, 0),
-    move: b => ({
-      kind: 'JUMP', cubeId: 0, from: X(b, 0), to: X(b, 8), jumps: 4,
-      path: [X(b, 0), X(b, 2), X(b, 4), X(b, 6), X(b, 8)],
-      jumped: [X(b, 1), X(b, 3), X(b, 5), X(b, 7)]
+      path: [X(b, 2)], blocker: []
     })
   }
 ];
@@ -152,206 +107,171 @@ test('RF-Fixtures aus §1.3 liefern exakt den spezifizierten Move', () => {
     const b = fx.board;
     const state = createState(b, fx.cubes(b), 'ABBAU');
     const m = resolveMove(b, state, fx.tap(b));
-    assert.deepEqual(m, fx.move(b), fx.name);
+    const soll = fx.move(b);
+    for (const k of Object.keys(soll)) assert.deepEqual(m[k], soll[k], `${fx.name} -> ${k}`);
   }
 });
 
-test('RF-3 ist normativ: Sprung ueber den letzten Blocker ins Freie (Teil von RULE_VERSION)', () => {
-  assert.equal(RULE_VERSION, 2);
-  const b = B5;
-  const state = createState(b, [{ cell: X(b, 3), dir: PX }, { cell: X(b, 4), dir: PX }], 'ABBAU');
-  const m = resolveMove(b, state, X(b, 3));
-  assert.equal(m.kind, 'EXIT');
-  assert.equal(m.jumps, 1);
-  assert.deepEqual(m.jumped, [X(b, 4)]);
-  // Waere n2 im Gitter und besetzt, muesste derselbe Aufbau BLOCKED liefern.
-  const b6 = vol(6, 2, 3);
-  const s2 = createState(b6, [{ cell: X(b6, 3), dir: PX }, { cell: X(b6, 4), dir: PX },
-                              { cell: X(b6, 5), dir: PX }], 'ABBAU');
-  assert.equal(resolveMove(b6, s2, X(b6, 3)).kind, 'INVALID');
-  assert.equal(resolveMove(b6, s2, X(b6, 3)).reason, 'BLOCKED');
-});
-
-test('RF-6: kein Schritt hinter dem Sprung — das naechste Feld waere frei und im Gitter', () => {
-  const b = B5;
-  const state = createState(b, [{ cell: X(b, 0), dir: PX }, { cell: X(b, 1), dir: PX }], 'ABBAU');
-  assert.ok(isFree(state, X(b, 3)), 'Vorbedingung: X3 ist frei');
-  assert.notEqual(b.step[X(b, 2) * 6 + PX], OUT, 'Vorbedingung: X3 liegt im Gitter');
-  const m = resolveMove(b, state, X(b, 0));
-  assert.equal(m.kind, 'JUMP');
-  assert.equal(m.to, X(b, 2));
-  assert.equal(m.jumps, 1);
-});
-
-test('RF-9: ausgeschiedener Wuerfel und Index ausserhalb liefern INVALID/DEAD', () => {
-  const b = B5;
-  const state = createState(b, [{ cell: X(b, 4), dir: PX }], 'ABBAU');
-  const raus = resolveMove(b, state, X(b, 4));
-  applyMove(state, raus);
-  assert.equal(state.alive[0], 0);
-  const tot = resolveMove(b, state, X(b, 4));
-  assert.equal(tot.kind, 'INVALID');
-  assert.equal(tot.reason, 'DEAD');
-  const daneben = resolveMove(b, state, b.C + 5);
-  assert.equal(daneben.kind, 'INVALID');
-  assert.equal(daneben.reason, 'DEAD');
-  assert.equal(daneben.to, OUT);
-});
-
-test('RF-10 / Zusatz 1: Grenze vor Belegung — die Nachbarwand existiert fuer die Regel nicht', () => {
-  const b = fas(5, 4, 5);
-  const oben = F(b, 0, 1, b.H - 2);            // SUED, oberste Reihe
-  const deckel = F(b, 4, 3, b.D - 1);          // geometrisch direkt darueber
-  assert.ok(oben >= 0 && deckel >= 0);
-  const [x1, y1, z1] = latticeOf(b, oben);
-  const [x2, y2, z2] = latticeOf(b, deckel);
-  assert.deepEqual([x2, y2, z2], [x1, y1 + 1, z1], 'Vorbedingung: die Zellen liegen aneinander');
-  assert.equal(b.faceOf[oben], 0);
-  assert.equal(b.faceOf[deckel], 4);
-
-  const HOCH = 1;
-  const leer = createState(b, [{ cell: oben, dir: HOCH }], 'ABBAU');
-  const belegt = createState(b, [{ cell: oben, dir: HOCH }, { cell: deckel, dir: HOCH }], 'ABBAU');
-  assert.ok(isFree(leer, deckel));
-  assert.ok(!isFree(belegt, deckel));
-
-  const mLeer = resolveMove(b, leer, oben);
-  const mBelegt = resolveMove(b, belegt, oben);
-  assert.deepEqual(mLeer, mBelegt, 'Nachbarwand darf den Zug nicht beeinflussen');
-  assert.deepEqual(mLeer, { kind: 'EXIT', cubeId: 0, from: oben, to: OUT, jumps: 0, path: [oben], jumped: [] });
-});
-
-test('RF-10: in FASSADE bleibt jeder Zug auf seiner Flaeche', () => {
-  const b = fas(5, 4, 5);
-  const rng = mulberry32(7);
-  const cubes = [];
-  for (let c = 0; c < b.C; c++)
-    if (rng() < 0.5) cubes.push({ cell: c, dir: Math.floor(rng() * 4) });
-  const state = createState(b, cubes, 'ABBAU');
-  for (const c of legalCells(b, state)) {
-    const m = resolveMove(b, state, c);
-    for (const p of m.path) assert.equal(b.faceOf[p], b.faceOf[c]);
-    for (const j of m.jumped) assert.equal(b.faceOf[j], b.faceOf[c]);
-  }
-});
-
-test('RF-12: ein Zug veraendert genau einen Wuerfel, uebersprungene bleiben unberuehrt', () => {
+test('Blockiert bleibt blockiert: kein Stein verlaesst den Turm ueber einen Blocker hinweg', () => {
+  assert.equal(RULE_VERSION, 3);
   const b = B9;
-  const cubes = [{ cell: X(b, 0), dir: PX }, { cell: X(b, 1), dir: PX }, { cell: X(b, 3), dir: PX },
-                 { cell: X(b, 5), dir: PX }, { cell: X(b, 7), dir: PX }];
-  const state = createState(b, cubes, 'ABBAU');
-  const vorher = snap(state);
+  // Ein Blocker an JEDER Position der Bahn muss den Zug verhindern - egal wie weit weg.
+  for (let blocker = 1; blocker <= 8; blocker++) {
+    const state = createState(b, [{ cell: X(b, 0), dir: PX }, { cell: X(b, blocker), dir: NX }], 'ABBAU');
+    const m = resolveMove(b, state, X(b, 0));
+    assert.equal(m.kind, 'INVALID', `Blocker bei x=${blocker}`);
+    assert.equal(m.reason, 'BLOCKED');
+    assert.deepEqual(m.blocker, [X(b, blocker)], 'der Blockierer wird benannt');
+  }
+  // Ohne Blocker geht derselbe Stein hinaus.
+  const frei = createState(b, [{ cell: X(b, 0), dir: PX }], 'ABBAU');
+  assert.equal(resolveMove(b, frei, X(b, 0)).kind, 'EXIT');
+});
+
+test('Ein Blocker verschwindet nicht durch andere Zuege: erst raeumen, dann geht es', () => {
+  const b = B5;
+  const state = createState(b, [{ cell: X(b, 0), dir: PX }, { cell: X(b, 2), dir: PY }], 'ABBAU');
+  assert.equal(resolveMove(b, state, X(b, 0)).kind, 'INVALID');
+
+  // Der Blocker zeigt nach oben und ist selbst frei -> er geht.
+  const weg = resolveMove(b, state, X(b, 2));
+  assert.equal(weg.kind, 'EXIT');
+  applyMove(state, weg);
+
+  // Jetzt ist die Bahn frei.
+  assert.equal(resolveMove(b, state, X(b, 0)).kind, 'EXIT');
+});
+
+test('RF-4: ausgeschiedener Stein und Index ausserhalb liefern INVALID/DEAD', () => {
+  const b = B5;
+  const state = createState(b, [{ cell: X(b, 0), dir: PX }], 'ABBAU');
   const m = resolveMove(b, state, X(b, 0));
   applyMove(state, m);
-  const nachher = snap(state);
-  for (let id = 1; id < state.cubeCount; id++) {
-    assert.equal(nachher.cellOf[id], vorher.cellOf[id], `Wuerfel ${id} wurde bewegt`);
-    assert.equal(nachher.alive[id], vorher.alive[id]);
-  }
-  for (const j of m.jumped) assert.equal(nachher.occ[j], vorher.occ[j], 'uebersprungene Zelle veraendert');
-  let geaendert = 0;
-  for (let c = 0; c < b.C; c++) if (nachher.occ[c] !== vorher.occ[c]) geaendert++;
-  assert.equal(geaendert, 2, 'genau Start- und Zielzelle aendern sich');
-});
+  const tot = resolveMove(b, state, X(b, 0));
+  assert.equal(tot.kind, 'INVALID');
+  assert.equal(tot.reason, 'DEAD');
 
-test('Zusatz 4: Terminierung — Kette hoechstens ceil(max(W,H,D)/2) Glieder', () => {
-  for (const [b, letzte] of [[B7, 6], [B9, 8]]) {
-    const L = Math.max(b.W, b.H, b.D);
-    const cubes = [{ cell: X(b, 0), dir: PX }];
-    for (let x = 1; x < b.W; x += 2) cubes.push({ cell: X(b, x), dir: PX });
-    const state = createState(b, cubes, 'ABBAU');
-    const m = resolveMove(b, state, X(b, 0));
-    assert.equal(m.kind, 'JUMP');
-    assert.equal(m.to, X(b, letzte));
-    assert.ok(m.jumps <= Math.ceil(L / 2), `Kette zu lang: ${m.jumps} > ceil(${L}/2)`);
-
-    // Unabhaengige Nachrechnung mit hartem Zaehlerlimit (gehoert in den Test, nicht in den Code).
-    let cur = X(b, 0), glieder = 0, zaehler = 0;
-    for (;;) {
-      if (++zaehler > 2 * L) throw new Error('Kette terminiert nicht');
-      const over = b.step[cur * 6 + PX];
-      if (over === OUT || state.occ[over] === EMPTY) break;
-      const land = b.step[over * 6 + PX];
-      if (land === OUT || state.occ[land] !== EMPTY) break;
-      cur = land; glieder++;
-    }
-    assert.equal(glieder, m.jumps);
-    assert.equal(cur, m.to);
+  for (const c of [-1, b.C, b.C + 5, 1.5, NaN]) {
+    const r = resolveMove(b, state, c);
+    assert.equal(r.kind, 'INVALID');
+    assert.equal(r.reason, 'DEAD');
   }
 });
 
-test('Zusatz 5: Sackgassen existieren — vollbelegtes Gitter, alle Pfeile nach innen', () => {
-  for (const b of [vol(5, 5, 5), fas(6, 6, 6)]) {
-    const cubes = [];
-    for (let c = 0; c < b.C; c++) {
-      let best = -1, tiefe = -1;
-      for (const d of validDirs(b, c)) {
-        const t = depthOf(b, c, d);
-        if (t > tiefe) { tiefe = t; best = d; }
-      }
-      assert.ok(tiefe >= 2, `${b.mode}: Zelle ${c} hat keine Richtung mit Tiefe >= 2`);
-      cubes.push({ cell: c, dir: best });
-    }
-    const state = createState(b, cubes, 'ABBAU');
-    assert.equal(state.aliveCount, b.C);
-    assert.deepEqual(legalCells(b, state), [], `${b.mode}: unerwarteter Zug im Vollgitter`);
-    assert.equal(hasAnyMove(b, state), false);
-    assert.equal(mobility(b, state), 0);
-    assert.equal(isSolved(state), false);
-    for (let c = 0; c < b.C; c++) {
-      const m = resolveMove(b, state, c);
-      assert.equal(m.kind, 'INVALID');
-      assert.equal(m.reason, 'BLOCKED');
-    }
-  }
+test('RF-5: in FASSADE existiert die Nachbarwand fuer die Regel nicht', () => {
+  const b = fas(4, 4, 4);
+  // Ein Stein am Wandrand, der hinauszeigt, geht heraus - auch wenn auf der Nachbarwand
+  // an der entsprechenden Stelle etwas steht.
+  const rand = F(b, 0, 0, 0);
+  const nachbar = F(b, 3, 0, 0);
+  const state = createState(b, [{ cell: rand, dir: 2 }, { cell: nachbar, dir: 2 }], 'ABBAU');
+  const m = resolveMove(b, state, rand);
+  assert.equal(m.kind, 'EXIT', 'der Wandrand ist ein Rand, kein Uebergang');
+  assert.deepEqual(m.blocker, []);
 });
 
-test('Zusatz 6: applyMove gefolgt von revertMove ist die Identitaet (10 000 Faelle)', () => {
-  const bretter = [vol(4, 4, 4), fas(4, 4, 4), vol(3, 3, 3), fas(5, 4, 3)];
-  const rng = mulberry32(20250830);
-  let pruefungen = 0, exits = 0, jumps = 0, steps = 0, invalid = 0;
-
-  while (pruefungen < 10000) {
-    const b = bretter[Math.floor(rng() * bretter.length)];
+test('RF-5: in FASSADE bleibt jede Bahn auf ihrer Flaeche', () => {
+  const b = fas(5, 5, 5);
+  const rng = mulberry32(2026);
+  for (let runde = 0; runde < 200; runde++) {
     const state = emptyState(b, b.C, 'ABBAU');
-    const dichte = 0.35 + 0.55 * rng();
     for (let c = 0; c < b.C; c++) {
-      if (rng() >= dichte) continue;
+      if (rng() >= 0.5) continue;
       const dirs = validDirs(b, c);
       addCube(state, c, dirs[Math.floor(rng() * dirs.length)]);
     }
-    for (let k = 0; k < 60 && pruefungen < 10000; k++) {
-      const besetzt = [];
-      for (let c = 0; c < b.C; c++) if (state.occ[c] !== EMPTY) besetzt.push(c);
-      if (besetzt.length === 0) break;
-      // auch ungueltige Zellen pruefen: applyMove/revertMove muessen dort folgenlos bleiben
-      const probe = besetzt[Math.floor(rng() * besetzt.length)];
-      const mp = resolveMove(b, state, probe);
-      const vorher = snap(state);
-      applyMove(state, mp);
-      revertMove(state, mp);
-      assert.deepEqual(snap(state), vorher, `Involution verletzt bei ${b.mode}/${probe}/${mp.kind}`);
-      pruefungen++;
-      if (mp.kind === 'EXIT') exits++;
-      else if (mp.kind === 'JUMP') jumps++;
-      else if (mp.kind === 'STEP') steps++;
-      else invalid++;
-      const legal = legalCells(b, state);
-      if (legal.length === 0) break;
-      const zug = resolveMove(b, state, legal[Math.floor(rng() * legal.length)]);
-      applyMove(state, zug);
+    for (let c = 0; c < b.C; c++) {
+      if (state.occ[c] === EMPTY) continue;
+      const m = resolveMove(b, state, c);
+      for (const z of m.path) assert.equal(b.faceOf[z], b.faceOf[c], 'path verlaesst die Wand');
+      for (const z of m.blocker) assert.equal(b.faceOf[z], b.faceOf[c], 'Blocker von fremder Wand');
     }
   }
-  assert.equal(pruefungen, 10000);
-  // Der Lauf muss alle vier Ausgaenge tatsaechlich getroffen haben, sonst prueft er nichts.
-  assert.ok(exits > 100 && jumps > 100 && steps > 100 && invalid > 100,
-    `Ausgaenge zu einseitig: EXIT ${exits}, JUMP ${jumps}, STEP ${steps}, INVALID ${invalid}`);
 });
 
-test('Zusatz 7: path und jumped sind strukturell korrekt', () => {
+test('RF-6: ein Zug entfernt genau einen Stein, alle anderen bleiben unberuehrt', () => {
+  const b = B5;
+  const state = createState(b, [
+    { cell: X(b, 0), dir: PX }, { cell: V(b, 1, 1, 0), dir: PY }, { cell: V(b, 2, 1, 0), dir: PY }
+  ], 'ABBAU');
+  const vor = snap(state);
+  const m = resolveMove(b, state, X(b, 0));
+  assert.equal(m.kind, 'EXIT');
+  applyMove(state, m);
+
+  assert.equal(state.aliveCount, vor.aliveCount - 1);
+  for (let id = 1; id < state.cubeCount; id++) {
+    assert.equal(state.cellOf[id], vor.cellOf[id], 'fremder Stein wurde bewegt');
+    assert.equal(state.alive[id], vor.alive[id], 'fremder Stein wurde entfernt');
+  }
+});
+
+test('Terminierung: die Bahn ist hoechstens so lang wie die groesste Kante', () => {
+  for (const b of [B3, B5, B9, vol(6, 6, 6), fas(6, 6, 6)]) {
+    const grenze = Math.max(b.W, b.H, b.D);
+    const rng = mulberry32(7);
+    for (let runde = 0; runde < 50; runde++) {
+      const state = emptyState(b, b.C, 'ABBAU');
+      for (let c = 0; c < b.C; c++) {
+        if (rng() >= 0.4) continue;
+        const dirs = validDirs(b, c);
+        addCube(state, c, dirs[Math.floor(rng() * dirs.length)]);
+      }
+      for (let c = 0; c < b.C; c++) {
+        if (state.occ[c] === EMPTY) continue;
+        const m = resolveMove(b, state, c);
+        assert.ok(m.path.length <= grenze, `Bahn zu lang: ${m.path.length} > ${grenze}`);
+      }
+    }
+  }
+});
+
+test('Sackgassen existieren: zwei Steine, die aufeinander zeigen, kommen nie heraus', () => {
+  const b = B5;
+  const state = createState(b, [{ cell: X(b, 1), dir: PX }, { cell: X(b, 2), dir: NX }], 'ABBAU');
+  assert.equal(resolveMove(b, state, X(b, 1)).kind, 'INVALID');
+  assert.equal(resolveMove(b, state, X(b, 2)).kind, 'INVALID');
+  assert.equal(hasAnyMove(b, state), false);
+  assert.equal(isSolved(state), false);
+});
+
+test('applyMove gefolgt von revertMove ist die Identitaet (10 000 Faelle)', () => {
+  const bretter = [vol(4, 4, 4), fas(5, 5, 4), vol(5, 2, 3)];
+  const rng = mulberry32(1234);
+  let geprueft = 0;
+
+  for (let runde = 0; runde < 400 && geprueft < 10000; runde++) {
+    const b = bretter[runde % bretter.length];
+    const state = emptyState(b, b.C, 'ABBAU');
+    for (let c = 0; c < b.C; c++) {
+      if (rng() >= 0.55) continue;
+      if (state.occ[c] !== EMPTY) continue;   // zweite Zelle eines bereits gesetzten 2x1-Steins
+      const dirs = validDirs(b, c);
+      const ext = rng() < 0.3 ? dirs[Math.floor(rng() * dirs.length)] : EXT_NONE;
+      if (ext !== EXT_NONE) {
+        const z = b.step[c * 6 + ext];
+        if (z === OUT || state.occ[z] !== EMPTY) continue;
+      }
+      addCube(state, c, dirs[Math.floor(rng() * dirs.length)], false, ext);
+    }
+    for (let c = 0; c < b.C && geprueft < 10000; c++) {
+      if (state.occ[c] === EMPTY) continue;
+      const vor = snap(state);
+      const m = resolveMove(b, state, c);
+      if (m.kind === 'INVALID') continue;
+      applyMove(state, m);
+      revertMove(state, m);
+      geprueft++;
+      assert.deepEqual(snap(state), vor, 'revertMove ist nicht exakt invers');
+    }
+  }
+  assert.ok(geprueft >= 1000, `zu wenige Faelle geprueft: ${geprueft}`);
+});
+
+test('path und blocker sind strukturell korrekt', () => {
   const bretter = [vol(4, 4, 4), fas(5, 5, 4), vol(5, 2, 3)];
   const rng = mulberry32(4711);
-  let gesehen = { STEP: 0, JUMP: 0, EXIT: 0, INVALID: 0 };
+  const gesehen = { EXIT: 0, INVALID: 0 };
 
   for (let runde = 0; runde < 400; runde++) {
     const b = bretter[runde % bretter.length];
@@ -370,67 +290,30 @@ test('Zusatz 7: path und jumped sind strukturell korrekt', () => {
       assert.equal(m.from, c);
       assert.equal(m.path[0], m.from);
       assert.equal(m.cubeId, state.occ[c]);
+      assert.equal(m.to, OUT, 'to ist immer OUT');
 
       if (m.kind === 'INVALID') {
         assert.deepEqual(m.path, [c]);
-        assert.equal(m.to, OUT);
-        assert.equal(m.jumps, 0);
-        if (m.reason === 'BLOCKED') {
-          assert.equal(m.jumped.length, 1);
-          assert.equal(m.jumped[0], b.step[c * 6 + d]);
-          assert.notEqual(state.occ[m.jumped[0]], EMPTY);
-          assert.notEqual(b.step[m.jumped[0] * 6 + d], OUT);
-          assert.notEqual(state.occ[b.step[m.jumped[0] * 6 + d]], EMPTY);
-        } else {
-          assert.deepEqual(m.jumped, []);
-        }
+        assert.equal(m.reason, 'BLOCKED');
+        assert.equal(m.blocker.length, 1, 'genau der erste Blockierer wird gemeldet');
+        assert.notEqual(state.occ[m.blocker[0]], EMPTY);
         continue;
       }
 
-      assert.equal(m.jumped.length, m.jumps, 'jumped.length !== jumps');
-      if (m.kind === 'STEP') {
-        assert.equal(m.path.length, 2);
-        assert.equal(m.jumps, 0);
-        assert.equal(m.to, m.path[1]);
-        assert.equal(m.path[1], b.step[c * 6 + d]);
-        assert.equal(state.occ[m.to], EMPTY);
-      } else if (m.kind === 'JUMP') {
-        assert.equal(m.path.length, m.jumps + 1);
-        assert.ok(m.jumps >= 1);
-        assert.equal(m.to, m.path[m.path.length - 1]);
-        assert.equal(state.occ[m.to], EMPTY);
-      } else {
-        assert.equal(m.to, OUT);
-        if (m.jumps === 0) {
-          // Rutschen (R0): path nennt die durchlaufenen Zellen, Startzelle eingeschlossen.
-          // Steht der Stein schon am Rand (RF-1), ist die Bahn nur die Startzelle.
-          assert.ok(m.path.length >= 1, 'Rutschbahn nennt mindestens die Startzelle');
-          for (let k = 0; k + 1 < m.path.length; k++)
-            assert.equal(b.step[m.path[k] * 6 + d], m.path[k + 1], 'Rutschbahn liegt auf dem Strahl');
-          assert.equal(b.step[m.path[m.path.length - 1] * 6 + d], OUT, 'Rutschbahn endet am Rand');
-        } else {
-          assert.equal(m.path.length, Math.max(1, m.jumps));
-        }
-      }
-
-      // Der Zug laeuft auf dem Strahl: jumped[k] liegt zwischen path[k] und path[k+1].
-      for (let k = 0; k < m.jumped.length; k++) {
-        assert.equal(m.jumped[k], b.step[m.path[k] * 6 + d], 'jumped nicht auf dem Strahl');
-        assert.notEqual(state.occ[m.jumped[k]], EMPTY, 'jumped-Zelle war nicht besetzt');
-      }
-      // Beim Sprung liegt zwischen zwei path-Stationen genau ein uebersprungener Traeger.
-      // Beim Rutschen (EXIT mit jumps 0) gibt es keine Traeger; die Bahn ist oben geprueft.
-      if (m.kind === 'JUMP' || (m.kind === 'EXIT' && m.jumps > 0))
-        for (let k = 0; k + 1 < m.path.length; k++)
-          assert.equal(m.path[k + 1], b.step[m.jumped[k] * 6 + d], 'path nicht auf dem Strahl');
+      // EXIT: die Bahn liegt auf dem Strahl, ist frei und endet am Rand.
+      assert.deepEqual(m.blocker, []);
+      for (let k = 0; k + 1 < m.path.length; k++)
+        assert.equal(b.step[m.path[k] * 6 + d], m.path[k + 1], 'path nicht auf dem Strahl');
+      assert.equal(b.step[m.path[m.path.length - 1] * 6 + d], OUT, 'path endet nicht am Rand');
       for (let k = 1; k < m.path.length; k++)
-        assert.equal(state.occ[m.path[k]], EMPTY, 'Landepunkt war besetzt');
-      assert.equal(new Set([...m.path, ...m.jumped]).size, m.path.length + m.jumped.length);
+        assert.equal(state.occ[m.path[k]], EMPTY, 'Bahn war nicht frei');
+      assert.equal(new Set(m.path).size, m.path.length, 'path enthaelt Wiederholungen');
     }
   }
-  for (const k of ['STEP', 'JUMP', 'EXIT', 'INVALID'])
+  for (const k of ['EXIT', 'INVALID'])
     assert.ok(gesehen[k] > 50, `Zugart ${k} kaum getroffen: ${gesehen[k]}`);
 });
+
 
 test('Zusatz 8a: legalCells ist aufsteigend, deterministisch und deckt sich mit hasAnyMove', () => {
   const b = vol(4, 4, 4);
@@ -459,33 +342,41 @@ test('Zusatz 8a: legalCells ist aufsteigend, deterministisch und deckt sich mit 
 
 test('Zusatz 8b: isSolved fuer ABBAU und BEFREIUNG', () => {
   const b = B5;
-  const cubes = [{ cell: X(b, 4), dir: PX }, { cell: X(b, 3), dir: PX, target: true }];
+  // X4 steht am Rand und geht sofort. X3 (das Ziel) ist von X4 blockiert, bis der weg ist.
+  // X0 zeigt nach +X und ist von X3 blockiert - er bleibt als Restturm stehen.
+  const cubes = [
+    { cell: X(b, 4), dir: PX },
+    { cell: X(b, 3), dir: PX, target: true },
+    { cell: X(b, 0), dir: PX }
+  ];
 
   const abbau = createState(b, cubes, 'ABBAU');
   assert.equal(abbau.targetId, 1);
   assert.equal(isSolved(abbau), false);
-  applyMove(abbau, resolveMove(b, abbau, X(b, 3)));   // RF-3: springt ueber X4 hinaus
-  assert.equal(abbau.aliveCount, 1);
-  assert.equal(isSolved(abbau), false, 'ABBAU ist erst bei aliveCount 0 geloest');
+  assert.equal(resolveMove(b, abbau, X(b, 3)).kind, 'INVALID', 'X3 ist von X4 blockiert');
+
   applyMove(abbau, resolveMove(b, abbau, X(b, 4)));
+  assert.equal(abbau.aliveCount, 2);
+  assert.equal(isSolved(abbau), false, 'ABBAU ist erst bei aliveCount 0 geloest');
+  applyMove(abbau, resolveMove(b, abbau, X(b, 3)));
+  applyMove(abbau, resolveMove(b, abbau, X(b, 0)));
   assert.equal(abbau.aliveCount, 0);
   assert.equal(isSolved(abbau), true);
 
   const befreiung = createState(b, cubes, 'BEFREIUNG');
   assert.equal(befreiung.targetId, 1);
   assert.equal(isSolved(befreiung), false);
-  // Der Nicht-Zielwuerfel verlaesst das Gitter: das loest nichts aus.
+  // Der Nicht-Zielstein verlaesst das Gitter: das loest nichts aus.
   applyMove(befreiung, resolveMove(b, befreiung, X(b, 4)));
   assert.equal(isSolved(befreiung), false);
-  // Jetzt der gruene Wuerfel; der Restturm darf stehenbleiben.
-  const restZustand = createState(b, cubes, 'BEFREIUNG');
-  const zugZiel = resolveMove(b, restZustand, X(b, 3));
+  // Jetzt der gruene Stein; der Restturm darf stehenbleiben.
+  const zugZiel = resolveMove(b, befreiung, X(b, 3));
   assert.equal(zugZiel.kind, 'EXIT');
-  applyMove(restZustand, zugZiel);
-  assert.equal(isSolved(restZustand), true);
-  assert.equal(restZustand.aliveCount, 1, 'Restturm bleibt stehen');
-  revertMove(restZustand, zugZiel);
-  assert.equal(isSolved(restZustand), false, 'Undo dreht den Sieg zurueck');
+  applyMove(befreiung, zugZiel);
+  assert.equal(isSolved(befreiung), true);
+  assert.equal(befreiung.aliveCount, 1, 'Restturm bleibt stehen');
+  revertMove(befreiung, zugZiel);
+  assert.equal(isSolved(befreiung), false, 'Undo dreht den Sieg zurueck');
 });
 
 test('Zustandsverwaltung: addCube, dropCube, cloneState, isFree', () => {
@@ -620,7 +511,7 @@ test('Regression B: resolveMove prueft den Bereich, bevor es state.occ liest', (
   const state = createState(b, [{ cell: X(b, 0), dir: PX }], 'ABBAU');
   const erwartet = (cell) => ({
     kind: 'INVALID', reason: 'DEAD', cubeId: EMPTY, from: cell, to: OUT,
-    jumps: 0, path: [cell], jumped: []
+    path: [cell], blocker: []
   });
   for (const cell of [-1, -100, b.C, b.C + 5, 1.5, NaN, Infinity]) {
     const m = resolveMove(b, state, cell);
@@ -676,12 +567,13 @@ test('Regression D: undo verwirft den zurueckgenommenen Tipp aus session.taps', 
   // `replayTaps(level, taps).moves === payload.moves` — jeder Lauf mit Undo waere damit
   // grundsaetzlich unverifiziert gewesen, obwohl §1.5 Undo ausdruecklich zulaesst.
   const b = B5;                                   // VOLUMEN 5x2x3
-  const level = levelAus([{ cell: X(b, 0), dir: PX }, { cell: X(b, 4), dir: PX }]);
+  // X4 steht am Rand und geht sofort; X0 ist von X4 blockiert, bis der weg ist.
+  const level = levelAus([{ cell: X(b, 4), dir: PX }, { cell: X(b, 0), dir: PX }]);
   const ses = createSession(b, level);
 
-  assert.equal(tap(ses, X(b, 0)).kind, 'STEP');
+  assert.equal(tap(ses, X(b, 4)).kind, 'EXIT');
   assert.equal(ses.moves, 1);
-  assert.deepEqual(ses.taps, [X(b, 0)]);
+  assert.deepEqual(ses.taps, [X(b, 4)]);
 
   assert.equal(undo(ses), true);
   assert.equal(ses.moves, 0);
@@ -706,16 +598,16 @@ test('Regression D2: undo kuerzt nur den eigenen Tipp samt nachfolgender unguelt
   const ses = createSession(b, level);
 
   assert.equal(tap(ses, X(b, 2)).kind, 'INVALID');   // leere Zelle, vor dem Zug
-  assert.equal(tap(ses, X(b, 0)).kind, 'STEP');      // der Zug, der zurueckgenommen wird
+  assert.equal(tap(ses, X(b, 4)).kind, 'EXIT');      // der Zug, der zurueckgenommen wird
   assert.equal(tap(ses, X(b, 3)).kind, 'INVALID');   // leere Zelle, nach dem Zug
-  assert.deepEqual(ses.taps, [X(b, 2), X(b, 0), X(b, 3)]);
+  assert.deepEqual(ses.taps, [X(b, 2), X(b, 4), X(b, 3)]);
   assert.equal(ses.moves, 1);
 
   assert.equal(undo(ses), true);
   assert.deepEqual(ses.taps, [X(b, 2)], 'ungueltige Tipps vor dem Zug bleiben erhalten');
   assert.equal(ses.moves, 0);
 
-  assert.equal(tap(ses, X(b, 4)).kind, 'EXIT');
+  assert.equal(tap(ses, X(b, 4)).kind, 'EXIT');   // derselbe Stein noch einmal
   const r = nachspielen(b, level, ses.taps);
   assert.equal(r.moves, ses.moves);
   assert.equal(r.invalid, 1, 'der ungueltige Tipp vor dem Zug zaehlt weiterhin');

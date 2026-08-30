@@ -22,11 +22,13 @@ import {
 } from './game.js';
 
 /**
- * Generatorversion 2: der Rueckwaertsbau setzt neben 1x1-Wuerfeln auch 2x1-Steine
- * (SPEC §6.3 A). Levelcodes der Version 1 erzeugen andere Level und sind nicht mehr
- * gueltig — deshalb die Erhoehung.
+ * Generatorversion 3. Mit Regelversion 3 gibt es weder Schritt noch Sprung: ein Stein
+ * verlaesst den Turm genau dann, wenn seine Bahn frei ist. Damit entfaellt die zweite
+ * Rueckwaertsoperation (unRelocate) ersatzlos — sie zog einen Stein auf ein Feld zurueck,
+ * von dem aus ihn ein Schritt oder eine Sprungkette wieder an seinen Platz brachte, und
+ * beides gibt es nicht mehr. Der Rueckwaertsbau besteht jetzt nur noch aus unExit.
  */
-export const GEN_VERSION = 2;
+export const GEN_VERSION = 3;
 
 // --- Zufall (SPEC §11) --------------------------------------------------
 
@@ -75,16 +77,14 @@ function runde(x, stellen) {
 
 /** Standardgewichte des Kandidatenscores (SPEC §6.6). */
 function standardGewichte() {
-  return { wFill: 1.00, wChain: 2.50, wFrag: 0.60, wDiv: 0.90, wSil: 0.35, wRand: 0.25 };
+  return { wFill: 1.00, wDiv: 0.90, wSil: 0.35, wRand: 0.25 };
 }
 
 /** Standardbaender (SPEC §6.11). */
 function standardBaender() {
   return {
-    naivePerPar: [1.08, 1.60],
-    chainShare: [0.15, 0.70],
-    mobility: [0.12, 0.80],
-    trivialExit: [0.00, 0.45]
+    naivePerPar: [0.00, 1.00],
+    mobility: [0.00, 1.00]
   };
 }
 
@@ -97,20 +97,20 @@ function standardBaender() {
  * (Modus, Ziel, Masse) und nicht nach Levelnummer.
  */
 const KURVE = Object.freeze([
-  { mode: 'FASSADE', goal: 'ABBAU', W: 3, H: 4, D: 3, density: 0.95, maxChain: 1, q: 0, domino: 0, stars: [1.15, 1.35] },
-  { mode: 'FASSADE', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.92, maxChain: 2, q: 0, domino: 0.18, stars: [1.15, 1.30] },
-  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.95, maxChain: 2, q: 0.55, domino: 0.30, stars: [1.15, 1.30] },
-  { mode: 'FASSADE', goal: 'ABBAU', W: 5, H: 10, D: 5, density: 0.92, maxChain: 3, q: 0, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 3, H: 5, D: 3, density: 0.85, maxChain: 2, q: 0.60, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.85, maxChain: 3, q: 0, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.90, maxChain: 4, q: 0.80, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'ABBAU', W: 5, H: 8, D: 5, density: 0.90, maxChain: 4, q: 0, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 5, H: 12, D: 5, density: 0.90, maxChain: 4, q: 0.70, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 5, H: 8, D: 5, density: 0.90, maxChain: 4, q: 0.70, domino: 0.30, stars: [1.12, 1.25] }
+  { mode: 'FASSADE', goal: 'ABBAU', W: 3, H: 4, D: 3, density: 0.95, q: 0, domino: 0, stars: [1.15, 1.35] },
+  { mode: 'FASSADE', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.92, q: 0, domino: 0.18, stars: [1.15, 1.30] },
+  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.95, q: 0.55, domino: 0.30, stars: [1.15, 1.30] },
+  { mode: 'FASSADE', goal: 'ABBAU', W: 5, H: 10, D: 5, density: 0.92, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 3, H: 5, D: 3, density: 0.85, q: 0.60, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.85, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.90, q: 0.80, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'ABBAU', W: 5, H: 8, D: 5, density: 0.90, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 5, H: 12, D: 5, density: 0.90, q: 0.70, domino: 0.30, stars: [1.12, 1.25] },
+  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 5, H: 8, D: 5, density: 0.90, q: 0.70, domino: 0.30, stars: [1.12, 1.25] }
 ]);
 
 /** Freies Spiel und unbekannte Masse: Parameter der Stufe 8. */
-const KURVE_STANDARD = Object.freeze({ density: 0.90, maxChain: 4, q: 0.70, domino: 0.30, stars: [1.12, 1.25] });
+const KURVE_STANDARD = Object.freeze({ density: 0.90, q: 0.70, domino: 0.30, stars: [1.12, 1.25] });
 
 /** Generatorparameter einer Konfiguration; total, damit Levelcodes umkehrbar bleiben. */
 function kurvenParameter(mode, goal, W, H, D) {
@@ -137,9 +137,7 @@ function specVon(mode, goal, W, H, D, seed, attempt) {
     attempt: attempt | 0,
     mode, goal, W, H, D,
     density: p.density,
-    maxChain: p.maxChain,
     dominoRate: p.domino,
-    relocateRate: 0,
     weights: standardGewichte(),
     bands: standardBaender(),
     targetQuantile: p.q
@@ -154,9 +152,7 @@ function normSpec(spec) {
   const W = spec.W | 0, H = spec.H | 0, D = spec.D | 0;
   const basis = specVon(mode, goal, W, H, D, spec.seed >>> 0, spec.attempt | 0);
   if (Number.isFinite(spec.density)) basis.density = Math.min(1, Math.max(0, spec.density));
-  if (Number.isFinite(spec.maxChain)) basis.maxChain = Math.max(0, Math.floor(spec.maxChain));
   if (Number.isFinite(spec.dominoRate)) basis.dominoRate = Math.min(1, Math.max(0, spec.dominoRate));
-  if (Number.isFinite(spec.relocateRate)) basis.relocateRate = Math.min(1, Math.max(0, spec.relocateRate));
   if (Number.isFinite(spec.targetQuantile)) basis.targetQuantile = Math.min(1, Math.max(0, spec.targetQuantile));
   if (spec.weights) basis.weights = Object.assign(standardGewichte(), spec.weights);
   if (spec.bands) basis.bands = Object.assign(standardBaender(), spec.bands);
@@ -270,7 +266,7 @@ export function parseHash(hash) {
  *
  * @returns {{ok:boolean, move:Object|null}}
  */
-export function pruefeUnExit(board, state, cell, dir, maxChain, ext = EXT_NONE) {
+export function pruefeUnExit(board, state, cell, dir, ext = EXT_NONE) {
   if (!Number.isInteger(cell) || cell < 0 || cell >= board.C) return { ok: false, move: null };
   if (state.occ[cell] !== EMPTY) return { ok: false, move: null };
   if (!Number.isInteger(dir) || dir < 0 || dir > 5 || board.valid[cell * 6 + dir] !== 1)
@@ -290,59 +286,13 @@ export function pruefeUnExit(board, state, cell, dir, maxChain, ext = EXT_NONE) 
   const id = addCube(state, cell, dir, false, ext);
   const m = resolveMove(board, state, cell);
   dropCube(state, id);
-  return { ok: m.kind === 'EXIT' && m.jumps <= maxChain, move: m };
-}
-
-/**
- * (B) unRelocate — Zurueckziehen eines vorhandenen Wuerfels (SPEC §6.3 B).
- *
- * Die Richtung ist die BESTEHENDE Richtung des Wuerfels und wird nie neu gewaehlt
- * (Ausfallart N4). Akzeptiert wird nur, wenn die Regel den Wuerfel von `von` aus exakt
- * auf `nach` bringt — nicht davor (N2), nicht darueber hinaus (N1) und nicht als
- * Schritt statt der geplanten Kette (N3).
- *
- * @returns {{ok:boolean, move:Object|null}}
- */
-export function pruefeUnRelocate(board, state, cubeId, von, nach, maxChain) {
-  if (!Number.isInteger(cubeId) || cubeId < 0 || cubeId >= state.cubeCount) return { ok: false, move: null };
-  if (!state.alive[cubeId] || state.cellOf[cubeId] !== nach) return { ok: false, move: null };
-  if (!Number.isInteger(von) || von < 0 || von >= board.C || von === nach) return { ok: false, move: null };
-  if (state.occ[von] !== EMPTY) return { ok: false, move: null };
-
-  // Der Stein wird probeweise nach `von` zurueckgezogen. Bei einem 2x1-Stein wandert
-  // die zweite Zelle mit; liegt sie ausserhalb oder ist sie belegt, ist der Kandidat
-  // unbrauchbar.
-  const ext = state.extOf[cubeId];
-  const zweiNach = ext === EXT_NONE ? OUT : board.step[nach * 6 + ext];
-  const zweiVon = ext === EXT_NONE ? OUT : board.step[von * 6 + ext];
-  if (ext !== EXT_NONE) {
-    if (zweiVon === OUT) return { ok: false, move: null };
-    if (state.occ[zweiVon] !== EMPTY && state.occ[zweiVon] !== cubeId) return { ok: false, move: null };
-    if (board.valid[zweiVon * 6 + state.dirOf[cubeId]] !== 1) return { ok: false, move: null };
-  }
-
-  state.occ[nach] = EMPTY;
-  if (zweiNach !== OUT) state.occ[zweiNach] = EMPTY;
-  state.occ[von] = cubeId;
-  if (zweiVon !== OUT) state.occ[zweiVon] = cubeId;
-  state.cellOf[cubeId] = von;
-  const m = resolveMove(board, state, von);
-  state.occ[von] = EMPTY;
-  if (zweiVon !== OUT) state.occ[zweiVon] = EMPTY;
-  state.occ[nach] = cubeId;
-  if (zweiNach !== OUT) state.occ[zweiNach] = cubeId;
-  state.cellOf[cubeId] = nach;
-
-  const ok = (m.kind === 'STEP' || m.kind === 'JUMP') && m.to === nach && m.jumps <= maxChain;
-  return { ok, move: m };
+  return { ok: m.kind === 'EXIT', move: m };
 }
 
 // --- Kandidatensuche (SPEC §6.6) ----------------------------------------
 
 const MAX_ZELLEN = 80;      // hoechstens so viele freie Zellen betrachten (grosse Bretter)
 const MAX_KANDIDATEN = 200; // Abbruch der Suche (grosse Bretter)
-const MAX_WUERFEL = 40;     // hoechstens so viele Wuerfel fuer unRelocate
-const MAX_REL_KANDIDATEN = 60;
 /** Ab dieser Zellzahl greift die Deckelung aus SPEC §6.6. */
 const VOLLSUCHE_BIS = 400;
 
@@ -395,7 +345,7 @@ function unExitCandidates(board, state, rng, spec, zweizellig = false) {
       for (let e = 0; e < exts.length; e++) {
         for (let d = 0; d < 6; d++) {
           if (board.valid[c * 6 + d] !== 1) continue;
-          const pr = pruefeUnExit(board, state, c, d, spec.maxChain, exts[e]);
+          const pr = pruefeUnExit(board, state, c, d, exts[e]);
           if (pr.ok) cands.push({ art: 'exit', cell: c, dir: d, ext: exts[e], move: pr.move });
         }
       }
@@ -410,38 +360,11 @@ function unExitCandidates(board, state, rng, spec, zweizellig = false) {
     const exts = formen(cell);
     for (let e = 0; e < exts.length && cands.length < MAX_KANDIDATEN; e++) {
       for (let j = 0; j < dirs.length; j++) {
-        const pr = pruefeUnExit(board, state, cell, dirs[j], spec.maxChain, exts[e]);
+        const pr = pruefeUnExit(board, state, cell, dirs[j], exts[e]);
         if (pr.ok) {
           cands.push({ art: 'exit', cell, dir: dirs[j], ext: exts[e], move: pr.move });
           if (cands.length >= MAX_KANDIDATEN) break;
         }
-      }
-    }
-  }
-  return cands;
-}
-
-function unRelocateCandidates(board, state, rng, spec) {
-  const lebende = [];
-  for (let id = 0; id < state.cubeCount; id++) if (state.alive[id]) lebende.push(id);
-  shuffle(lebende, rng);
-  const cands = [];
-  const n = Math.min(lebende.length, MAX_WUERFEL);
-  const reichweite = Math.max(board.W, board.H, board.D) + 2;
-  for (let k = 0; k < n && cands.length < MAX_REL_KANDIDATEN; k++) {
-    const q = lebende[k];
-    const nach = state.cellOf[q];
-    const gegen = board.opp[state.dirOf[q]];
-    // Der Kandidatenraum ist genau der eindimensionale Rueckwaertsstrahl (SPEC §6.3 B).
-    let a = nach;
-    for (let t = 1; t <= reichweite; t++) {
-      a = board.step[a * 6 + gegen];
-      if (a === OUT) break;
-      if (state.occ[a] !== EMPTY) continue;
-      const pr = pruefeUnRelocate(board, state, q, a, nach, spec.maxChain);
-      if (pr.ok) {
-        cands.push({ art: 'relocate', cubeId: q, cell: a, nach, dir: state.dirOf[q], move: pr.move });
-        if (cands.length >= MAX_REL_KANDIDATEN) break;
       }
     }
   }
@@ -458,18 +381,6 @@ function belegteNachbarn(board, state, cell) {
     if (s !== OUT && state.occ[s] !== EMPTY) n++;
   }
   return n / 6;
-}
-
-/** 1 minus mittleres, normiertes Alter der uebersprungenen Traeger. */
-function frischeDerTraeger(state, jumped) {
-  if (!jumped || jumped.length === 0) return 0;
-  const n = Math.max(1, state.cubeCount);
-  let s = 0;
-  for (let i = 0; i < jumped.length; i++) {
-    const id = state.occ[jumped[i]];
-    if (id !== EMPTY) s += (id + 1) / n;
-  }
-  return s / jumped.length;
 }
 
 /** Anteil der belegten Nachbarn mit ABWEICHENDER Pfeilrichtung (SPEC §6.6). */
@@ -501,8 +412,6 @@ function silhouettenBonus(board, cell) {
 function score(board, state, c, spec, rng) {
   const w = spec.weights;
   return w.wFill * belegteNachbarn(board, state, c.cell)
-    + w.wChain * Math.min(c.move.jumps, spec.maxChain)
-    + w.wFrag * frischeDerTraeger(state, c.move.jumped)
     + w.wDiv * richtungsVielfalt(board, state, c.cell, c.dir)
     + w.wSil * silhouettenBonus(board, c.cell)
     + w.wRand * rng();
@@ -520,23 +429,10 @@ function waehleBesten(board, state, cands, spec, rng) {
 
 /** Schreibt den akzeptierten Un-Zug fort und stellt ihn der Referenzliste VORAN. */
 function applyUnMove(state, cand, ref, info) {
-  if (cand.art === 'exit') {
-    const id = addCube(state, cand.cell, cand.dir, false,
-      cand.ext === undefined ? EXT_NONE : cand.ext);
-    ref.unshift(cand.cell);
-    info.unshift({ cell: cand.cell, cubeId: id, kind: 'EXIT' });
-    return;
-  }
-  const ext = state.extOf[cand.cubeId];
-  const zweiNach = ext === EXT_NONE ? OUT : state.step[cand.nach * 6 + ext];
-  const zweiCell = ext === EXT_NONE ? OUT : state.step[cand.cell * 6 + ext];
-  state.occ[cand.nach] = EMPTY;
-  if (zweiNach !== OUT) state.occ[zweiNach] = EMPTY;
-  state.occ[cand.cell] = cand.cubeId;
-  if (zweiCell !== OUT) state.occ[zweiCell] = cand.cubeId;
-  state.cellOf[cand.cubeId] = cand.cell;
+  const id = addCube(state, cand.cell, cand.dir, false,
+    cand.ext === undefined ? EXT_NONE : cand.ext);
   ref.unshift(cand.cell);
-  info.unshift({ cell: cand.cell, cubeId: cand.cubeId, kind: cand.move.kind });
+  info.unshift({ cell: cand.cell, cubeId: id, kind: 'EXIT' });
 }
 
 // --- Fuellrueckfall (SPEC §6.5) -----------------------------------------
@@ -561,7 +457,7 @@ function applyUnMove(state, cand, ref, info) {
  * Ein einzuegiger Austritt wird bevorzugt, wenn es ihn gibt: dann bleibt `par` bei einem
  * Tipp je Wuerfel (SPEC §6.11).
  */
-function austrittsfolge(board, state, q, rng, maxChain) {
+function austrittsfolge(board, state, q, rng) {
   const beste = bestExitDirs(board, q);
   const uebrige = validDirs(board, q).filter((d) => beste.indexOf(d) < 0);
   const reihenfolge = shuffle(beste.slice(), rng).concat(shuffle(uebrige, rng));
@@ -574,7 +470,7 @@ function austrittsfolge(board, state, q, rng, maxChain) {
     let cur = q, fertig = false;
     for (let t = 0; t < grenze; t++) {
       const m = resolveMove(board, state, cur);
-      if (m.kind === 'INVALID' || m.jumps > maxChain) break;
+      if (m.kind === 'INVALID') break;
       zellen.push(cur); zuege.push(m);
       applyMove(state, m);
       if (m.kind === 'EXIT') { fertig = true; break; }
@@ -601,11 +497,10 @@ function austrittsfolge(board, state, q, rng, maxChain) {
  * @param {Object} board @param {Object} state
  * @param {number[]} ref Zellindizes in Klickreihenfolge; wird vorne ergaenzt
  * @param {() => number} rng
- * @param {{maxChain?:number, limit?:number, info?:Array}} [opts]
+ * @param {{limit?:number, info?:Array}} [opts]
  * @returns {{added:number, moves:number}}
  */
 export function fillByDepth(board, state, ref, rng, opts = {}) {
-  const maxChain = Number.isFinite(opts.maxChain) ? opts.maxChain : 6;
   const limit = Number.isFinite(opts.limit) ? opts.limit : Infinity;
   const info = Array.isArray(opts.info) ? opts.info : null;
 
@@ -614,16 +509,22 @@ export function fillByDepth(board, state, ref, rng, opts = {}) {
   for (let k = 0; k < frei.length; k++) rang[frei[k]] = k;
   frei.sort((a, b) => (board.minDepthOf[b] - board.minDepthOf[a]) || (rang[a] - rang[b]));
 
+  // Die Grenze ist in ZELLEN angegeben (ein 2x1-Stein belegt zwei), deshalb wird auch in
+  // Zellen gezaehlt und nicht in Steinen.
+  let belegt = 0;
+  for (let c = 0; c < board.C; c++) if (state.occ[c] !== EMPTY) belegt++;
+
   let gesetzt = 0, zuege = 0;
   for (let k = 0; k < frei.length; k++) {
-    if (state.aliveCount >= limit) break;
+    if (belegt >= limit) break;
     const q = frei[k];
     if (state.occ[q] !== EMPTY) continue;
-    const folge = austrittsfolge(board, state, q, rng, maxChain);
+    const folge = austrittsfolge(board, state, q, rng);
     if (!folge) continue;
     ref.unshift(...folge.zellen);
     if (info) info.unshift(...folge.info);
     gesetzt++;
+    belegt++;
     zuege += folge.zellen.length;
   }
   return { added: gesetzt, moves: zuege };
@@ -648,24 +549,19 @@ function tryGenerate(board, spec, rng) {
 
   let voll = belegt();
   while (voll < N && guard-- > 0) {
-    const useRelocate = state.aliveCount > 2 && rng() < spec.relocateRate;
     // Form der Runde vorab waehlen; ein 2x1-Stein braucht zwei freie Zellen.
-    const willZwei = !useRelocate && (N - voll) >= 2 && rng() < (spec.dominoRate || 0);
+    const willZwei = (N - voll) >= 2 && rng() < (spec.dominoRate || 0);
 
-    let cands = useRelocate ? unRelocateCandidates(board, state, rng, spec)
-      : unExitCandidates(board, state, rng, spec, willZwei);
+    let cands = unExitCandidates(board, state, rng, spec, willZwei);
     if (cands.length === 0 && willZwei)
       cands = unExitCandidates(board, state, rng, spec, false);
-    if (cands.length === 0)
-      cands = useRelocate ? unExitCandidates(board, state, rng, spec, false)
-        : unRelocateCandidates(board, state, rng, spec);
     if (cands.length === 0) break;   // -> Fuellrueckfall
     applyUnMove(state, waehleBesten(board, state, cands, spec, rng), ref, info);
     voll = belegt();
   }
 
   if (voll < N)
-    fillByDepth(board, state, ref, rng, { maxChain: spec.maxChain, limit: N, info });
+    fillByDepth(board, state, ref, rng, { limit: N, info });
 
   return { state, ref, info };
 }
@@ -684,21 +580,11 @@ function kennzahlen(board, level, runs, rng) {
   for (let c = 0; c < board.C; c++) if (start.occ[c] !== EMPTY) belegteZellen++;
   const dichte = board.C > 0 ? belegteZellen / board.C : 0;
 
-  // Referenzloesung einmal durchspielen: Kettenanteil, laengste Kette, triviale Austritte.
-  let ketten = 0, maxK = 0, trivial = 0;
-  const s = createState(board, level.cubes, level.goal);
-  for (let i = 0; i < level.witness.length; i++) {
-    const m = resolveMove(board, s, level.witness[i]);
-    if (m.kind === 'INVALID') break;
-    if (m.jumps >= 1) ketten++;
-    if (m.jumps > maxK) maxK = m.jumps;
-    if (m.kind === 'EXIT' && m.jumps === 0) trivial++;
-    applyMove(s, m);
-  }
-  const chainShare = level.witness.length > 0 ? ketten / level.witness.length : 0;
-  // Anteil der Tipps, die ohne jeden Traeger ins Freie fuehren ("geschenkte" Zuege).
-  const trivialExit = level.witness.length > 0 ? trivial / level.witness.length : 0;
-
+  // Wie weit kommt ein Spieler, der einfach irgendeinen moeglichen Stein antippt?
+  // Unter Regelversion 3 braucht jeder Stein genau einen gueltigen Tipp; ein naiver Lauf,
+  // der sich festfaehrt, bleibt unter par. naivePerPar ist damit ein Mass fuer die
+  // Schwierigkeit: nahe 1 heisst "loest sich fast von selbst", niedrig heisst
+  // "wer nicht nachdenkt, sitzt fest".
   const laeufe = Math.max(1, runs | 0);
   let summe = 0;
   for (let r = 0; r < laeufe; r++) summe += solveGreedy(board, start, rng).moves;
@@ -706,11 +592,8 @@ function kennzahlen(board, level, runs, rng) {
 
   return {
     density: runde(dichte, 4),
-    chainShare: runde(chainShare, 4),
-    maxChain: maxK,
     mobility: runde(mobility(board, start), 4),
-    naivePerPar: runde(naivePerPar, 4),
-    trivialExit: runde(trivialExit, 4)
+    naivePerPar: runde(naivePerPar, 4)
   };
 }
 

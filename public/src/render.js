@@ -1434,7 +1434,7 @@ export function createTowerView(ctx) {
     if (!carrierGeo) {
       carrierGeo = new THREE.BoxGeometry(CUBE_EDGE * 1.06, CUBE_EDGE * 1.06, CUBE_EDGE * 1.06);
     }
-    for (const cell of (move.jumped || [])) {
+    for (const cell of (move.blocker || [])) {
       const m = new THREE.Mesh(carrierGeo, mats.carrier);
       m.position.copy(worldOf(cell));
       m.userData.psScale = 1;
@@ -1684,7 +1684,7 @@ export function buildTweens(view, board, move, skin) {
     items.push(new Tween(mo.wobble.dur, ease, (e, t) => {
       if (!flashed) {
         flashed = true;
-        if (move.jumped && move.jumped.length) view.flashBlocker(move.jumped[0]);
+        if (move.blocker && move.blocker.length) view.flashBlocker(move.blocker[0]);
       }
       const off = amp * Math.sin(2 * Math.PI * cycles * t) * (1 - e);
       mesh.position.copy(base).addScaledVector(d, off);
@@ -1697,51 +1697,10 @@ export function buildTweens(view, board, move, skin) {
     return items;
   }
 
-  // --- Schritt -----------------------------------------------------------
-  if (move.kind === 'STEP') {
-    const from = pos(move.from);
-    const to = pos(move.to);
-    items.push(new Tween(mo.step.dur, easeOf(mo.step.ease), (e) => {
-      mesh.position.lerpVectors(from, to, e);
-      mesh.updateMatrix();
-    }, () => { view.commitMove(move); }));
-    return items;
-  }
-
-  // --- Sprungglieder (JUMP und der Gitteranteil von EXIT) ---------------
-  // Beim Rutschen (EXIT ohne Sprung) gibt es keine Zwischenstationen zu huepfen:
-  // der Stein setzt sich in Bewegung und verlaesst den Turm in einem Zug.
-  const path = (move.kind === 'EXIT' && move.jumps === 0)
-    ? [move.from]
-    : (move.path || [move.from]);
-  const tiltAxis = new THREE.Vector3();
-  const q = new THREE.Quaternion();
-  for (let i = 0; i + 1 < path.length; i++) {
-    if (i > 0) items.push(mo.chain.delay);
-    const a = pos(path[i]);
-    const b = pos(path[i + 1]);
-    const d = view.dirVectorOf(path[i], cube.dir).normalize();
-    const axis = arcAxis(a, d, view.center);
-    tiltAxis.copy(d).cross(axis);
-    if (tiltAxis.lengthSq() < 1e-6) tiltAxis.set(0, 1, 0);
-    else tiltAxis.normalize();
-    const tilt = tiltAxis.clone();
-    const arcH = mo.jump.arc * CELL;
-    const last = (i + 2 === path.length) && move.kind === 'JUMP';
-    items.push(new Tween(mo.jump.dur, easeOf(mo.jump.ease), (e, t) => {
-      mesh.position.lerpVectors(a, b, e);
-      mesh.position.addScaledVector(axis, arcH * 4 * t * (1 - t));
-      // +-12 Grad Kippen, bei t = 1 wieder exakt 0.
-      q.setFromAxisAngle(tilt, THREE.MathUtils.degToRad(12) * Math.sin(Math.PI * t));
-      mesh.quaternion.copy(q);
-      mesh.updateMatrix();
-    }, last ? () => { view.commitMove(move); } : null));
-  }
-
-  if (move.kind === 'JUMP') {
-    if (!items.length) items.push(new Tween(0, Ease.linear, null, () => { view.commitMove(move); }));
-    return items;
-  }
+  // Unter Regelversion 3 kennt die Regel nur noch EXIT und INVALID: es gibt weder
+  // Schritt noch Sprung, also auch keine Zwischenstationen zu animieren. Der Stein
+  // setzt sich in Bewegung und verlaesst den Turm in einem Zug.
+  const path = [move.from];
 
   // --- Austritt: Wegfliegen ----------------------------------------------
   const lastCell = path.length ? path[path.length - 1] : move.from;

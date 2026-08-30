@@ -12,12 +12,15 @@ export const CUBE_EDGE = 0.92;
 export const MAX_CUBES = 1200;
 
 /**
- * Regelversion 2 (SPEC §1.2):
- *  - RUTSCH: ist die Bahn in Pfeilrichtung bis zum Rand vollstaendig frei, verlaesst der
- *    Stein den Turm sofort ganz, statt nur ein Feld vorzuruecken.
- *  - Steine koennen zwei Zellen belegen (2x1) und bewegen sich als starre Einheit.
+ * Regelversion 3 (SPEC §1.2). Ein Stein bewegt sich genau dann, wenn seine Bahn in
+ * Pfeilrichtung bis zum Rand vollstaendig frei ist — dann verlaesst er den Turm ganz.
+ * Steht irgendwo auf dieser Bahn ein anderer Stein, passiert nichts.
+ *
+ * Es gibt weder Schritt noch Sprung: ein blockierter Stein bleibt blockiert. Das ist die
+ * Regel der Vorlage. Die Halma-Sprungkette der Versionen 1 und 2 ist damit entfallen; sie
+ * liess sichtbar blockierte Steine ueber ihre Blockierer hinweg verschwinden.
  */
-export const RULE_VERSION = 2;
+export const RULE_VERSION = 3;
 
 /** extOf-Wert eines einzelligen Steins: er hat keine zweite Zelle. */
 export const EXT_NONE = 255;
@@ -493,10 +496,14 @@ export function isFree(state, cell) {
 
 /**
  * @typedef {Object} Move
- * @property {'STEP'|'JUMP'|'EXIT'|'INVALID'} kind
+ * @property {'EXIT'|'INVALID'} kind   mehr Ausgaenge hat die Regel nicht (SPEC §1.2)
  * @property {'BLOCKED'|'DEAD'|undefined} reason
- * @property {number} cubeId @property {number} from @property {number} to
- * @property {number} jumps @property {number[]} path @property {number[]} jumped
+ * @property {number} cubeId
+ * @property {number} from   Ankerzelle vor dem Zug
+ * @property {number} to     bei EXIT stets OUT
+ * @property {number[]} path Ankerzellen der Rutschbahn, Startzelle eingeschlossen
+ * @property {number[]} blocker  bei INVALID/BLOCKED die Zellen, die den Zug verhindern;
+ *                               die Oberflaeche laesst sie rot aufblitzen
  */
 
 // --- Hilfen fuer mehrzellige Steine -------------------------------------
@@ -561,10 +568,10 @@ function bahn(step, anker, d, n) {
   return res;
 }
 
-function ungueltig(reason, id, from, jumped) {
+function ungueltig(reason, id, from, blocker) {
   return {
     kind: 'INVALID', reason, cubeId: id === undefined ? EMPTY : id, from, to: OUT,
-    jumps: 0, path: [from], jumped: Array.isArray(jumped) ? jumped.filter((c) => c !== OUT) : []
+    path: [from], blocker: Array.isArray(blocker) ? blocker.filter((c) => c !== OUT) : []
   };
 }
 
@@ -574,130 +581,66 @@ function ungueltig(reason, id, from, jumped) {
  * @returns {Move}
  */
 export function resolveMove(board, state, cell) {
-  if (!Number.isInteger(cell) || cell < 0 || cell >= board.C)   // RF-9, entartete Eingabe
+  if (!Number.isInteger(cell) || cell < 0 || cell >= board.C)   // RF-5, entartete Eingabe
     return ungueltig('DEAD', EMPTY, cell);
 
   const id = state.occ[cell];
-  if (id === EMPTY || !state.alive[id])        // RF-9
+  if (id === EMPTY || !state.alive[id])        // RF-5
     return ungueltig('DEAD', id, cell);
 
   const d = state.dirOf[id];
   const st = board.step;
   const anker = state.cellOf[id];
-  const zellen = zellenVon(state, id);
 
-  // --- Phase 1: Rutschbahn (Regel R0/R1) --------------------------------
-  // Solange in Pfeilrichtung alles frei ist, laeuft der Stein weiter. Erreicht er dabei
-  // den Rand, verlaesst er den Turm ganz. Wird er unterwegs aufgehalten, rueckt er nur
-  // das eine Feld vor, das er sicher erreicht (Regel R1).
-  let lauf = zellen;
-  let ankerLauf = anker;
+  // Die Bahn abschreiten. Jede Zielzelle wird ZUERST auf "ausserhalb" geprueft und erst
+  // dann auf Belegung — ausserhalb der Flaeche gibt es keinen Index, den man nach
+  // Belegung fragen koennte (SPEC §0.3).
+  let lauf = zellenVon(state, id);
   let schritte = 0;
-  let ersterAnker = OUT;
-  let blockiert = false;
 
   for (;;) {
     const ziel = vorruecken(st, lauf, d);
-    if (!freiFuer(state, ziel, id)) { blockiert = true; break; }
+    const blocker = besetzteVon(state, ziel, id);
+    if (blocker.length > 0)                    // RF-3: irgendwo auf der Bahn steht etwas
+      return ungueltig('BLOCKED', id, anker, blocker);
+
     schritte++;
-    ankerLauf = st[ankerLauf * 6 + d];
-    if (schritte === 1) ersterAnker = ankerLauf;
-    if (enthaeltAus(ziel)) {
-      // Mindestens eine Zelle hat das Gitter verlassen und der Rest ist frei:
-      // der Stein rutscht heraus (Regel R1).
+    if (enthaeltAus(ziel))                     // RF-1/RF-2: der Stein verlaesst das Gitter
       return {
         kind: 'EXIT', cubeId: id, from: anker, to: OUT,
-        jumps: 0, path: bahn(st, anker, d, schritte), jumped: []
+        path: bahn(st, anker, d, schritte), blocker: []
       };
-    }
+
     lauf = ziel;
   }
-
-  if (schritte > 0)                            // RF-2: ein Feld vor, dann haelt ihn etwas auf
-    return {
-      kind: 'STEP', cubeId: id, from: anker, to: ersterAnker,
-      jumps: 0, path: [anker, ersterAnker], jumped: []
-    };
-
-  void blockiert;
-
-  // --- Phase 2: Sprung (Regel R2) ---------------------------------------
-  const ueber = vorruecken(st, zellen, d);
-  const traeger = besetzteVon(state, ueber, id);
-  if (traeger.length === 0)                    // nichts zum Ueberspringen: nur der Rand blockt
-    return ungueltig('BLOCKED', id, anker, ueber);
-
-  const land = vorruecken(st, ueber, d);
-  if (!freiFuer(state, land, id))              // RF-4: dahinter ist auch besetzt
-    return ungueltig('BLOCKED', id, anker, traeger);
-  if (enthaeltAus(land))                       // RF-3: Sprung ueber den Rand hinaus
-    return {
-      kind: 'EXIT', cubeId: id, from: anker, to: OUT,
-      jumps: 1, path: [anker], jumped: traeger
-    };
-
-  let cur = land, jumps = 1;
-  let ankerCur = st[st[anker * 6 + d] * 6 + d];
-  const path = [anker, ankerCur], jumped = traeger.slice();
-
-  // --- Phase 3: Kette, NUR weitere Spruenge (Regel R3) ------------------
-  for (;;) {
-    const o = vorruecken(st, cur, d);
-    if (enthaeltAus(o)) break;                        // RF-5
-    const t = besetzteVon(state, o, id);
-    if (t.length === 0) break;                        // RF-6: kein Schritt hinter dem Sprung
-    const l = vorruecken(st, o, d);
-    if (!freiFuer(state, l, id)) break;               // RF-8
-    if (enthaeltAus(l)) {                             // RF-7
-      for (let k = 0; k < t.length; k++) jumped.push(t[k]);
-      return { kind: 'EXIT', cubeId: id, from: anker, to: OUT, jumps: jumps + 1, path, jumped };
-    }
-    cur = l; jumps++;
-    ankerCur = st[st[ankerCur * 6 + d] * 6 + d];
-    path.push(ankerCur);
-    for (let k = 0; k < t.length; k++) jumped.push(t[k]);
-  }
-  return { kind: 'JUMP', cubeId: id, from: anker, to: ankerCur, jumps, path, jumped };
 }
 
 /**
- * Ein Zug bewegt genau einen Stein starr; uebersprungene Steine bleiben unberuehrt (RF-12).
- * Der Ausleger aendert sich nie, deshalb ergeben sich die belegten Zellen aus Anker und extOf.
+ * Ein gueltiger Zug traegt genau einen Stein aus dem Turm; alle uebrigen bleiben unberuehrt
+ * (RF-6). Der Ausleger aendert sich nie, deshalb ergeben sich die belegten Zellen aus
+ * Anker und extOf.
  */
 export function applyMove(state, move) {
   if (move.kind === 'INVALID') return;
   const id = move.cubeId;
-  const ext = state.extOf[id];
-
-  const alt = zellenAb(state, move.from, ext);
-  for (let k = 0; k < alt.length; k++)
-    if (alt[k] !== OUT && state.occ[alt[k]] === id) state.occ[alt[k]] = EMPTY;
-
-  if (move.to === OUT) {
-    state.alive[id] = 0; state.cellOf[id] = -1; state.aliveCount--;
-    return;
-  }
-  const neu = zellenAb(state, move.to, ext);
-  for (let k = 0; k < neu.length; k++) if (neu[k] !== OUT) state.occ[neu[k]] = id;
-  state.cellOf[id] = move.to;
+  const zellen = zellenAb(state, move.from, state.extOf[id]);
+  for (let k = 0; k < zellen.length; k++)
+    if (zellen[k] !== OUT && state.occ[zellen[k]] === id) state.occ[zellen[k]] = EMPTY;
+  state.alive[id] = 0;
+  state.cellOf[id] = -1;
+  state.aliveCount--;
 }
 
-/** Exakt invers zu applyMove. */
+/** Exakt invers zu applyMove: der Stein kehrt vollstaendig auf seine Zellen zurueck. */
 export function revertMove(state, move) {
   if (move.kind === 'INVALID') return;
   const id = move.cubeId;
-  const ext = state.extOf[id];
-
-  if (move.to === OUT) {
-    state.alive[id] = 1; state.aliveCount++;
-  } else {
-    const neu = zellenAb(state, move.to, ext);
-    for (let k = 0; k < neu.length; k++)
-      if (neu[k] !== OUT && state.occ[neu[k]] === id) state.occ[neu[k]] = EMPTY;
-  }
-  const alt = zellenAb(state, move.from, ext);
-  for (let k = 0; k < alt.length; k++) if (alt[k] !== OUT) state.occ[alt[k]] = id;
   state.cellOf[id] = move.from;
+  state.alive[id] = 1;
+  state.aliveCount++;
+  const zellen = zellenAb(state, move.from, state.extOf[id]);
+  for (let k = 0; k < zellen.length; k++)
+    if (zellen[k] !== OUT) state.occ[zellen[k]] = id;
 }
 
 /** Alle antippbaren Zellen mit gueltigem Zug, aufsteigend sortiert. */

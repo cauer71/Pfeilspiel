@@ -72,7 +72,7 @@ function neuerSeed() {
  * Identitaetsstiftende Felder einer LevelSpec und sonst nichts.
  *
  * Wichtig fuer die Nachpruefbarkeit: der Levelcode (§4.2) traegt nur Modus, Ziel,
- * Masse, Versuch und Seed. Wuerde main.js zusaetzlich Dichte oder maxChain setzen,
+ * Masse, Versuch und Seed. Wuerde main.js zusaetzlich Dichte oder Steinanteil setzen,
  * koennte der Worker das Level aus dem Code nicht mehr bitgleich regenerieren
  * (§9.4). levels.js ergaenzt die Kurvenparameter selbst.
  */
@@ -283,9 +283,7 @@ export async function boot() {
       return;
     }
 
-    if (move.kind === 'STEP') klang('move');
-    else if (move.kind === 'JUMP') klang(move.jumps > 1 ? 'chain' : 'jump');
-    else if (move.kind === 'EXIT') {
+    if (move.kind === 'EXIT') {
       klang('fly');
       if (skin.fx && skin.fx.screenShake && !reduziert && skin.motion.shake.amp > 0) {
         anim.play(shakeWorld(welt.worldRig, skin.motion.shake.amp, skin.motion.shake.dur));
