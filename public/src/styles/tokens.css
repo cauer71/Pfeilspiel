@@ -1,0 +1,66 @@
+/* Pfeilspiel — Design-Tokens (SPEC §4.4, §7.2, §7.3).
+   :root traegt den vollstaendigen Schluesselsatz mit den Werten des Skins "Modern".
+   Beim Start und bei jedem Wechsel schreibt applySkinDom() dieselben Schluessel als
+   Inline-Properties auf <html> und ueberschreibt diese Defaults damit.
+   base.css benutzt ausschliesslich var(--ps-*) und keinen einzigen Literalwert. */
+
+:root {
+  /* Flaechen */
+  --ps-bg: #0E1116;
+  --ps-bg-2: #151A21;
+
+  /* Panels */
+  --ps-panel-bg: rgba(21, 26, 33, .86);
+  --ps-panel-blur: 8px;
+  --ps-panel-border: 1px solid rgba(255, 255, 255, .08);
+  --ps-panel-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+  --ps-panel-radius: 14px;
+
+  /* Schrift- und Akzentfarben */
+  --ps-fg: #ECEEF2;
+  --ps-fg-muted: #98A1AE;
+  --ps-accent: #5B8CFF;
+  --ps-accent-2: #5B8CFF;
+  --ps-accent-soft: rgba(91, 140, 255, .16);
+  --ps-accent-fg: #08111F;
+  --ps-success: #3FBF7F;
+  --ps-danger: #E2564A;
+
+  /* Schaltflaechen */
+  --ps-btn-bg: #1C222B;
+  --ps-btn-bg-hover: #232B36;
+  --ps-btn-fg: #ECEEF2;
+  --ps-btn-border: 1px solid rgba(255, 255, 255, .10);
+  --ps-btn-radius: 10px;
+  --ps-btn-press: scale(.97);
+
+  /* Typografie */
+  --ps-font-ui: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --ps-font-num: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --ps-size-hud: 14px;
+  --ps-size-title: 28px;
+  --ps-tracking: .01em;
+  --ps-transform: none;
+  --ps-text-shadow: none;
+  --ps-weight: 560;
+
+  /* Bewegung und Fokus */
+  --ps-dur-ui: 160ms;
+  --ps-ease-ui: cubic-bezier(.2, .8, .2, 1);
+  --ps-scrim: rgba(6, 8, 12, .62);
+  --ps-focus-ring: 0 0 0 2px rgba(91, 140, 255, .55);
+
+  /* CRT-Schicht; bei Modern und Apple vollstaendig aus */
+  --ps-scanline-opacity: 0;
+  --ps-scanline-period: 3px;
+  --ps-grille-opacity: 0;
+  --ps-vignette: 0;
+  --ps-canvas-filter: none;
+
+  /* Layout */
+  --ps-color-scheme: dark;
+  --ps-gap: 10px;
+  --ps-hud-pad: 12px 14px;
+
+  color-scheme: var(--ps-color-scheme);
+}

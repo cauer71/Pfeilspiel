@@ -1,0 +1,133 @@
+/* Pfeilspiel — Effektschicht (SPEC §4.4, §7.6, §8.8).
+   Enthaelt das CRT-Overlay des Arcade-Skins, die Shake-Keyframes und die
+   Ruecksichtnahme auf prefers-reduced-motion. Kein Postprocessing, kein
+   EffectComposer, kein drop-shadow auf dem Canvas: der CRT-Look ist reines CSS.
+
+   Nur diese vier Custom Properties sind lokal (kein Bestandteil des Skin-Tokensatzes
+   aus §7.2); applySkinDom() setzt --ps-crt-anim und --ps-crt-flicker je Skin. */
+
+:root {
+  --ps-crt-anim: paused;
+  --ps-crt-flicker: 0;
+  --ps-shake-amp: 3px;
+  --ps-shake-dur: 180ms;
+}
+
+/* --- CRT-Overlay ------------------------------------------------------ */
+
+/* Immer im Dokument vorhanden, ausserhalb von Arcade unsichtbar und ohne Kosten. */
+#ps-crt {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  opacity: var(--ps-scanline-opacity, 0);
+  background:
+    repeating-linear-gradient(to bottom,
+      rgba(0, 0, 0, .62) 0 1px, rgba(0, 0, 0, 0) 1px var(--ps-scanline-period, 3px)),
+    repeating-linear-gradient(to right,
+      rgba(255, 0, 0, var(--ps-grille-opacity, 0)) 0 1px,
+      rgba(0, 255, 0, var(--ps-grille-opacity, 0)) 1px 2px,
+      rgba(0, 0, 255, var(--ps-grille-opacity, 0)) 2px 3px);
+  mix-blend-mode: multiply;
+  animation: ps-flicker 2.4s steps(2, end) infinite;
+  animation-play-state: var(--ps-crt-anim, paused);
+}
+
+/* Vignette: dunkelt die Ecken ab wie eine gewoelbte Bildroehre. */
+#ps-crt::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(125% 100% at 50% 50%,
+    transparent 52%, rgba(0, 0, 0, var(--ps-vignette, 0)) 100%);
+}
+
+/* Durchlaufender Halbbildstreifen. */
+#ps-crt::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22vh;
+  background: linear-gradient(to bottom, rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, .055) 45%, rgba(255, 255, 255, 0) 100%);
+  animation: ps-roll 7.5s linear infinite;
+  animation-play-state: var(--ps-crt-anim, paused);
+}
+
+@keyframes ps-roll {
+  from { transform: translateY(-25vh); }
+  to   { transform: translateY(105vh); }
+}
+
+/* Helligkeitszittern der Roehre; Amplitude kommt aus fx.crt.flicker. */
+@keyframes ps-flicker {
+  0%, 100% { opacity: var(--ps-scanline-opacity, 0); }
+  50%      { opacity: calc(var(--ps-scanline-opacity, 0) + var(--ps-crt-flicker, 0)); }
+}
+
+:root:not([data-skin="arcade"]) #ps-crt { display: none; }
+:root[data-skin="arcade"] #ps-crt { --ps-crt-anim: running; }
+
+/* Nur saturate/contrast — ein Vollbild-Blur pro Bild ist verboten (SPEC §7.6). */
+#ps-canvas { filter: var(--ps-canvas-filter, none); }
+
+/* --- Arcade-Anmutung --------------------------------------------------- */
+
+/* Pixellook ohne externe Schriftdatei: Monospace, Versalien und Sperrung kommen
+   aus den Tokens, hier wird lediglich das Antialiasing der Glyphen zurueckgenommen.
+   Der Text bleibt echter Text: kopierbar, vorlesbar, layoutstabil. */
+:root[data-skin="arcade"] {
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* --- Bewegung ---------------------------------------------------------- */
+
+/* Wackeln fuer DOM-Elemente (ungueltiger Zug im HUD, Fehlermeldung).
+   Der Screenshake der Szene wirkt dagegen auf worldRig.position, NIE als
+   CSS-Transform auf dem Canvas (SPEC §7.6): das wuerde den Raycast verschieben. */
+@keyframes ps-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(calc(var(--ps-shake-amp, 3px) * -1)); }
+  40%      { transform: translateX(var(--ps-shake-amp, 3px)); }
+  60%      { transform: translateX(calc(var(--ps-shake-amp, 3px) * -0.6)); }
+  80%      { transform: translateX(calc(var(--ps-shake-amp, 3px) * 0.6)); }
+}
+
+.ps-shake {
+  animation: ps-shake var(--ps-shake-dur, 180ms) var(--ps-ease-ui, ease) 1;
+}
+
+@keyframes ps-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--ps-accent-soft, transparent); }
+  50%      { box-shadow: 0 0 0 6px var(--ps-accent-soft, transparent); }
+}
+
+.ps-pulse {
+  animation: ps-pulse calc(var(--ps-dur-ui, 160ms) * 4) var(--ps-ease-ui, ease) infinite;
+}
+
+@keyframes ps-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.ps-fade-in {
+  animation: ps-fade-in var(--ps-dur-ui, 160ms) var(--ps-ease-ui, ease) 1;
+}
+
+/* --- Ruecksichtnahme --------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  #ps-crt,
+  #ps-crt::after,
+  .ps-shake,
+  .ps-pulse,
+  .ps-fade-in {
+    animation: none !important;
+  }
+  /* Der Rollstreifen bleibt sonst als heller Balken stehen. */
+  #ps-crt::after { display: none; }
+}

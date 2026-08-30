@@ -1,0 +1,594 @@
+/* Pfeilspiel — Basis-Stylesheet der gesamten Oberflaeche (SPEC 4.4, 7.1, 9.1).
+
+   Regel dieser Datei: jede Farbe, jeder Radius, jeder Schatten, jede Schrift und
+   jede Zeitangabe kommt aus einem Skin-Token var(--ps-*). Kein Hexwert, kein rgb(),
+   kein benannter Farbwert ausser transparent und inherit. Die Tokens werden von
+   tokens.css als Modern-Standard gesetzt und von applySkinDom() ueberschrieben.
+
+   Touchziele sind mindestens 44 px hoch, die festen Leisten respektieren
+   env(safe-area-inset-*), und das Layout traegt auch im Hochformat. */
+
+/* --- Grundlagen -------------------------------------------------------- */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+html {
+  height: 100%;
+  color-scheme: var(--ps-color-scheme);
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--ps-bg);
+  color: var(--ps-fg);
+  font-family: var(--ps-font-ui);
+  font-size: var(--ps-size-hud);
+  font-weight: var(--ps-weight);
+  letter-spacing: var(--ps-tracking);
+  text-shadow: var(--ps-text-shadow);
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ps-focus-ring);
+}
+
+/* --- Buehne ------------------------------------------------------------ */
+
+#ps-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--ps-bg);
+}
+
+#ps-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Der Zeiger gehoert der Szene: kein Scrollen, kein Doppeltipp-Zoom. */
+  touch-action: none;
+}
+
+/* --- Ladeanzeige (setBusy) --------------------------------------------- */
+
+.ps-busy {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 80;
+  overflow: hidden;
+  background: var(--ps-accent-soft);
+}
+
+.ps-busy::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--ps-accent), transparent);
+  animation: ps-busy-slide calc(var(--ps-dur-ui) * 8) var(--ps-ease-ui) infinite;
+}
+
+@keyframes ps-busy-slide {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(350%); }
+}
+
+/* --- Panels ------------------------------------------------------------ */
+
+.ps-panel {
+  background: var(--ps-panel-bg);
+  border: var(--ps-panel-border);
+  border-radius: var(--ps-panel-radius);
+  box-shadow: var(--ps-panel-shadow);
+  backdrop-filter: blur(var(--ps-panel-blur));
+  -webkit-backdrop-filter: blur(var(--ps-panel-blur));
+  padding: var(--ps-hud-pad);
+}
+
+/* --- Kopfzeile --------------------------------------------------------- */
+
+.ps-hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ps-gap);
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 8px)
+    calc(env(safe-area-inset-right, 0px) + 8px)
+    8px
+    calc(env(safe-area-inset-left, 0px) + 8px);
+  /* Die Leiste selbst faengt keine Zeiger ab, nur ihre Kinder. */
+  pointer-events: none;
+}
+
+.ps-hud > * {
+  pointer-events: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ps-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ps-gap);
+  min-width: 0;
+}
+
+.ps-stat {
+  display: flex;
+  flex-direction: column;
+  min-width: 3.4em;
+  line-height: 1.2;
+}
+
+.ps-stat-k {
+  color: var(--ps-fg-muted);
+  font-size: .78em;
+  text-transform: var(--ps-transform);
+  letter-spacing: var(--ps-tracking);
+  white-space: nowrap;
+}
+
+.ps-stat-v {
+  font-family: var(--ps-font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 1.15em;
+  font-weight: var(--ps-weight);
+}
+
+.ps-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ps-gap);
+  align-items: center;
+}
+
+/* --- Schaltflaechen ---------------------------------------------------- */
+
+.ps-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ps-btn-bg);
+  color: var(--ps-btn-fg);
+  border: var(--ps-btn-border);
+  border-radius: var(--ps-btn-radius);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: var(--ps-weight);
+  letter-spacing: var(--ps-tracking);
+  text-transform: var(--ps-transform);
+  text-shadow: var(--ps-text-shadow);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--ps-dur-ui) var(--ps-ease-ui),
+    transform var(--ps-dur-ui) var(--ps-ease-ui);
+}
+
+.ps-btn:hover { background: var(--ps-btn-bg-hover); }
+
+.ps-btn:active { transform: var(--ps-btn-press); }
+
+.ps-btn:disabled {
+  opacity: .45;
+  cursor: default;
+  transform: none;
+}
+
+.ps-btn-primary {
+  background: var(--ps-accent);
+  color: var(--ps-accent-fg);
+}
+
+.ps-btn-primary:hover { background: var(--ps-accent-2); }
+
+/* --- Einstellungsleiste ------------------------------------------------ */
+
+.ps-settings {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: none;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--ps-gap);
+  padding:
+    10px
+    calc(env(safe-area-inset-right, 0px) + 10px)
+    calc(env(safe-area-inset-bottom, 0px) + 10px)
+    calc(env(safe-area-inset-left, 0px) + 10px);
+  max-height: 52vh;
+  overflow-y: auto;
+  background: var(--ps-panel-bg);
+  border-top: var(--ps-panel-border);
+  box-shadow: var(--ps-panel-shadow);
+  backdrop-filter: blur(var(--ps-panel-blur));
+  -webkit-backdrop-filter: blur(var(--ps-panel-blur));
+}
+
+.ps-settings.is-open { display: flex; }
+
+.ps-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 8.5em;
+  flex: 1 1 8.5em;
+}
+
+.ps-field-k {
+  color: var(--ps-fg-muted);
+  font-size: .78em;
+  text-transform: var(--ps-transform);
+  letter-spacing: var(--ps-tracking);
+}
+
+.ps-select,
+.ps-input {
+  min-height: 44px;
+  width: 100%;
+  padding: 0 10px;
+  background: var(--ps-btn-bg);
+  color: var(--ps-fg);
+  border: var(--ps-btn-border);
+  border-radius: var(--ps-btn-radius);
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: var(--ps-tracking);
+}
+
+.ps-input-num {
+  font-family: var(--ps-font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ps-gap);
+}
+
+.ps-toggle {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--ps-btn-bg);
+  color: var(--ps-btn-fg);
+  border: var(--ps-btn-border);
+  border-radius: var(--ps-btn-radius);
+  text-transform: var(--ps-transform);
+  cursor: pointer;
+  transition: background var(--ps-dur-ui) var(--ps-ease-ui);
+}
+
+.ps-toggle:hover { background: var(--ps-btn-bg-hover); }
+
+.ps-toggle.is-on {
+  background: var(--ps-accent-soft);
+  color: var(--ps-fg);
+}
+
+.ps-toggle input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--ps-accent);
+}
+
+.ps-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  background: var(--ps-accent-soft);
+  color: var(--ps-fg-muted);
+  border-radius: var(--ps-btn-radius);
+  font-size: .8em;
+  text-transform: var(--ps-transform);
+  letter-spacing: var(--ps-tracking);
+  white-space: nowrap;
+}
+
+.ps-chip:empty { display: none; }
+
+/* --- Overlays ---------------------------------------------------------- */
+
+.ps-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 12px)
+    calc(env(safe-area-inset-right, 0px) + 12px)
+    calc(env(safe-area-inset-bottom, 0px) + 12px)
+    calc(env(safe-area-inset-left, 0px) + 12px);
+  background: var(--ps-scrim);
+}
+
+.ps-dialog {
+  width: 100%;
+  max-width: 26rem;
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ps-gap);
+}
+
+.ps-dialog-narrow { max-width: 20rem; }
+.ps-dialog-wide { max-width: 44rem; }
+
+.ps-title {
+  margin: 0;
+  font-size: var(--ps-size-title);
+  font-weight: var(--ps-weight);
+  line-height: 1.15;
+  text-transform: var(--ps-transform);
+  letter-spacing: var(--ps-tracking);
+  text-shadow: var(--ps-text-shadow);
+}
+
+.ps-sub {
+  margin: 0;
+  color: var(--ps-fg-muted);
+  line-height: 1.45;
+}
+
+.ps-note {
+  margin: 0;
+  min-height: 1.2em;
+  color: var(--ps-fg-muted);
+  font-size: .9em;
+  line-height: 1.35;
+}
+
+.ps-note.is-ok { color: var(--ps-success); }
+.ps-note.is-error { color: var(--ps-danger); }
+
+.ps-stars {
+  margin: 0;
+  font-size: 1.8em;
+  line-height: 1;
+  letter-spacing: .08em;
+}
+
+.ps-stars > span:first-child { color: var(--ps-accent); }
+.ps-stars > span:last-child { color: var(--ps-fg-muted); }
+
+.ps-summary {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ps-gap);
+}
+
+.ps-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--ps-bg-2);
+  border-radius: var(--ps-btn-radius);
+}
+
+.ps-summary dt {
+  color: var(--ps-fg-muted);
+  font-size: .78em;
+  text-transform: var(--ps-transform);
+  letter-spacing: var(--ps-tracking);
+}
+
+.ps-summary dd {
+  margin: 0;
+  font-size: 1.15em;
+}
+
+.ps-num {
+  font-family: var(--ps-font-num);
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ps-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ps-gap);
+}
+
+.ps-form-row .ps-input { flex: 1 1 10rem; }
+
+.ps-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ps-gap);
+}
+
+.ps-dialog-actions .ps-btn { flex: 1 1 auto; }
+
+/* --- Bestenliste ------------------------------------------------------- */
+
+.ps-table-wrap {
+  max-height: 46vh;
+  overflow: auto;
+  border-radius: var(--ps-btn-radius);
+  background: var(--ps-bg-2);
+}
+
+.ps-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-table th,
+.ps-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: var(--ps-panel-border);
+  white-space: nowrap;
+}
+
+.ps-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ps-bg-2);
+  color: var(--ps-fg-muted);
+  font-size: .78em;
+  font-weight: var(--ps-weight);
+  text-transform: var(--ps-transform);
+  letter-spacing: var(--ps-tracking);
+}
+
+.ps-table td.ps-num { font-family: var(--ps-font-num); }
+
+.ps-table tbody tr:hover { background: var(--ps-accent-soft); }
+
+.ps-table tbody tr.is-self { background: var(--ps-accent-soft); }
+
+.ps-table .ps-cell-name {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Toast ------------------------------------------------------------- */
+
+.ps-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+  transform: translateX(-50%);
+  z-index: 70;
+  max-width: min(92vw, 26rem);
+  padding: var(--ps-hud-pad);
+  background: var(--ps-panel-bg);
+  color: var(--ps-fg);
+  border: var(--ps-panel-border);
+  border-radius: var(--ps-panel-radius);
+  box-shadow: var(--ps-panel-shadow);
+  backdrop-filter: blur(var(--ps-panel-blur));
+  -webkit-backdrop-filter: blur(var(--ps-panel-blur));
+  text-align: center;
+  line-height: 1.35;
+}
+
+.ps-toast.is-error { color: var(--ps-danger); }
+
+/* --- Ohne JavaScript --------------------------------------------------- */
+
+.ps-noscript {
+  position: fixed;
+  inset: auto 12px 12px 12px;
+  z-index: 90;
+  padding: var(--ps-hud-pad);
+  background: var(--ps-panel-bg);
+  color: var(--ps-fg);
+  border: var(--ps-panel-border);
+  border-radius: var(--ps-panel-radius);
+  text-align: center;
+}
+
+/* --- Anpassung an die Flaeche ------------------------------------------ */
+
+/* Hochformat und schmale Geraete: kompaktere Kopfzeile, Leiste in voller Breite. */
+@media (max-width: 560px) {
+  .ps-hud {
+    flex-direction: column;
+    /* In Spaltenrichtung wuerde flex-wrap zusaetzliche Spalten aufmachen und die
+       Panels ueber den Rand schieben. */
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+
+  .ps-stats { justify-content: space-between; }
+
+  /* Eine einzige, seitlich schiebbare Reihe: die Kopfzeile bleibt flach und
+     verdeckt den Turm nicht. */
+  .ps-actions {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .ps-actions::-webkit-scrollbar { display: none; }
+
+  .ps-actions .ps-btn {
+    flex: 0 0 auto;
+    padding: 0 9px;
+    font-size: .94em;
+  }
+
+  .ps-col-opt,
+  .ps-table td.ps-col-opt { display: none; }
+
+  .ps-table-wrap { max-height: 40vh; }
+}
+
+/* Sehr flache Fenster (Querformat auf dem Telefon): Overlays duerfen scrollen. */
+@media (max-height: 520px) {
+  .ps-dialog { max-height: 100%; }
+  .ps-table-wrap { max-height: 34vh; }
+  .ps-settings { max-height: 76vh; }
+}
+
+/* Ab Tabletbreite sitzt die Einstellungsleiste als Schublade unten rechts statt
+   ueber die volle Breite. Eingeblendet wird sie auf jeder Breite ueber die
+   Umschalttaste in der Kopfzeile: der Turm soll frei stehen, nicht halb verdeckt. */
+@media (min-width: 900px) {
+  .ps-settings {
+    left: auto;
+    right: 0;
+    max-width: 44rem;
+    border-left: var(--ps-panel-border);
+    border-top-left-radius: var(--ps-panel-radius);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-busy::after { animation: none; }
+
+  .ps-btn,
+  .ps-toggle {
+    transition: none;
+  }
+}

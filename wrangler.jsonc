@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pfeilspiel",
+  "main": "worker/index.js",
+  "compatibility_date": "2025-09-15",
+
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"]
+  },
+
+  "d1_databases": [
+    { "binding": "DB",
+      "database_name": "pfeilspiel",
+      "database_id": "5586dcd4-d715-4130-ba03-dc98fb08cba6",
+      "migrations_dir": "migrations" }
+  ],
+
+  // Leer lassen: Normalfall ist Same-Origin ohne CORS. Das Geheimnis IP_SALT wird im
+  // Dashboard unter Settings -> Variables and Secrets gesetzt, nie hier.
+  "vars": { "ALLOWED_ORIGINS": "" },
+  "observability": { "enabled": true }
+}

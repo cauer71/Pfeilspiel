@@ -1087,18 +1087,25 @@ Generatorleveln **niemals** in einer Sackgasse enden, bevor er mindestens einen 
 
 | Stufe | Level | Modus | Ziel | W×H×D | Dichte | maxChain | q | Sterne |
 |---|---|---|---|---|---|---|---|---|
-| 1 | 1–3 | FASSADE | ABBAU | 3×3×3 | 0.95 | 1 | – | par / 1.15 / 1.35 |
-| 2 | 4–8 | FASSADE | ABBAU | 4×4×4 | 0.92 | 2 | – | par / 1.15 / 1.30 |
-| 3 | 9–12 | FASSADE | BEFREIUNG | 4×5×4 | 0.95 | 2 | 0.55 | par / 1.15 / 1.30 |
-| 4 | 13–18 | FASSADE | ABBAU | 5×6×5 | 0.92 | 3 | – | par / 1.12 / 1.25 |
-| 5 | 19–22 | VOLUMEN | BEFREIUNG | 3×3×3 | 0.85 | 2 | 0.60 | par / 1.12 / 1.25 |
-| 6 | 23–30 | VOLUMEN | ABBAU | 4×4×4 | 0.85 | 3 | – | par / 1.12 / 1.25 |
-| 7 | 31–40 | VOLUMEN | BEFREIUNG | 4×5×4 | 0.90 | 4 | 0.80 | par / 1.12 / 1.25 |
+| 1 | 1–3 | FASSADE | ABBAU | 3×4×3 | 0.95 | 1 | – | par / 1.15 / 1.35 |
+| 2 | 4–8 | FASSADE | ABBAU | 4×6×4 | 0.92 | 2 | – | par / 1.15 / 1.30 |
+| 3 | 9–12 | FASSADE | BEFREIUNG | 4×8×4 | 0.95 | 2 | 0.55 | par / 1.15 / 1.30 |
+| 4 | 13–18 | FASSADE | ABBAU | 5×10×5 | 0.92 | 3 | – | par / 1.12 / 1.25 |
+| 5 | 19–22 | VOLUMEN | BEFREIUNG | 3×5×3 | 0.85 | 2 | 0.60 | par / 1.12 / 1.25 |
+| 6 | 23–30 | VOLUMEN | ABBAU | 4×6×4 | 0.85 | 3 | – | par / 1.12 / 1.25 |
+| 7 | 31–40 | VOLUMEN | BEFREIUNG | 4×8×4 | 0.90 | 4 | 0.80 | par / 1.12 / 1.25 |
 | 8 | 41+ | abwechselnd | abwechselnd | wachsend, **gedeckelt** | 0.90 | 4 | 0.70 | par / 1.12 / 1.25 |
 
-Stufe 8: `W = D = min(5, 4 + floor(n/12))`, `H = min(6, 4 + floor(n/16))`. **Harte Deckelung
-bei 5×6×5 in VOLUMEN** und `MAX_CUBES = 1200` — die Zugzahl waechst kubisch, und das Spielgefuehl
-kippt sonst von Raetsel zu Fleissarbeit. Im freien Spiel gelten dieselben Deckel.
+Stufe 8, mit `k = n - 41`: `W = D = min(6, 5 + floor(k/30))`,
+`H = min(16, 10 + floor(k/6))` in FASSADE und `H = min(10, 6 + floor(k/8))` in VOLUMEN.
+
+**Die Hoehe traegt den Schwierigkeitszuwachs, nicht die Grundflaeche.** Das hat zwei Gruende.
+Erstens die Silhouette: die Vorlage ist ein hoher Turm, kein Wuerfel; eine Grundflaeche von 3 bis 6
+Zellen bei 4 bis 16 Etagen trifft dieses Bild. Zweitens die Zugzahl: bei fester Grundflaeche
+waechst sie in FASSADE wie `2(W+D-2)·(H-1) + W·D`, also **linear** in der Hoehe, waehrend eine
+wachsende Grundflaeche sie kubisch treibt und das Spielgefuehl von Raetsel zu Fleissarbeit kippt.
+Harte Deckel: 6×16×6 in FASSADE (336 Zellen), 6×10×6 in VOLUMEN (360 Zellen), dazu
+`MAX_CUBES = 1200`. Im freien Spiel gelten dieselben Deckel.
 
 `relocateRate = 0` in allen Stufen. Damit ist `par` exakt die Wuerfelzahl („ein Tipp pro
 Wuerfel“), die lesbarste Par-Definition, die dieses Spiel haben kann. Sprungketten (`maxChain`,

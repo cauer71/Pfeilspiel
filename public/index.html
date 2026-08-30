@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0E1116">
+<meta name="description" content="Pfeilspiel: dreidimensionales Denkspiel mit Pfeilwuerfeln und Halma-Zugregel.">
+<title>Pfeilspiel</title>
+<link rel="icon" href="data:,">
+
+<link rel="stylesheet" href="/src/styles/tokens.css">
+<link rel="stylesheet" href="/src/styles/base.css">
+<link rel="stylesheet" href="/src/styles/fx.css">
+
+<!-- Genau eine Importmap, exakt gepinnt und selbst gehostet (SPEC 8.1).
+     Sie steht vor dem ersten script type=module. -->
+<script type="importmap">
+{ "imports": {
+    "three":         "/vendor/three/0.185.1/build/three.module.min.js",
+    "three/addons/": "/vendor/three/0.185.1/examples/jsm/"
+} }
+</script>
+<script type="module" src="/src/main.js"></script>
+</head>
+<body>
+
+<!-- Alle sichtbaren Texte setzt ui.js aus TEXTE ueber data-ps-t (Textinhalt),
+     data-ps-ta (aria-label), data-ps-tp (Platzhalter) und data-ps-tt (Titel).
+     Damit gibt es genau einen Ort fuer die deutschen Strings. -->
+
+<div id="ps-stage">
+  <canvas id="ps-canvas" data-ps-ta="canvasLabel"></canvas>
+</div>
+
+<div id="ps-busy" class="ps-busy" hidden aria-hidden="true"></div>
+
+<header id="ps-hud" class="ps-hud">
+
+  <div class="ps-panel ps-stats" id="ps-stats">
+    <div class="ps-stat">
+      <span class="ps-stat-k" data-ps-t="labelMoves"></span>
+      <span class="ps-stat-v" id="ps-moves">0</span>
+    </div>
+    <div class="ps-stat">
+      <span class="ps-stat-k" data-ps-t="labelTime"></span>
+      <span class="ps-stat-v" id="ps-timer">0:00</span>
+    </div>
+    <div class="ps-stat">
+      <span class="ps-stat-k" data-ps-t="labelPar"></span>
+      <span class="ps-stat-v" id="ps-par">–</span>
+    </div>
+    <div class="ps-stat">
+      <span class="ps-stat-k" data-ps-t="labelUndos"></span>
+      <span class="ps-stat-v" id="ps-undos">0</span>
+    </div>
+  </div>
+
+  <nav class="ps-panel ps-actions" data-ps-ta="navLabel">
+    <button type="button" class="ps-btn ps-btn-primary" id="ps-btn-new" data-ps-t="btnNew"></button>
+    <button type="button" class="ps-btn" id="ps-btn-undo" data-ps-t="btnUndo"></button>
+    <button type="button" class="ps-btn" id="ps-btn-restart" data-ps-t="btnRestart"></button>
+    <button type="button" class="ps-btn" id="ps-btn-board" data-ps-t="btnBoard"></button>
+    <button type="button" class="ps-btn" id="ps-btn-settings"
+            aria-expanded="false" aria-controls="ps-settings" data-ps-t="btnSettings"></button>
+  </nav>
+
+</header>
+
+<footer id="ps-settings" class="ps-settings" data-ps-ta="settingsLabel">
+
+  <div class="ps-field">
+    <label class="ps-field-k" for="ps-skin" data-ps-t="labelSkin"></label>
+    <select class="ps-select" id="ps-skin">
+      <option value="modern" data-ps-t="skinModern"></option>
+      <option value="apple" data-ps-t="skinApple"></option>
+      <option value="arcade" data-ps-t="skinArcade"></option>
+    </select>
+  </div>
+
+  <div class="ps-field">
+    <label class="ps-field-k" for="ps-mode" data-ps-t="labelMode"></label>
+    <select class="ps-select" id="ps-mode">
+      <option value="FASSADE" data-ps-t="modeFassade"></option>
+      <option value="VOLUMEN" data-ps-t="modeVolumen"></option>
+    </select>
+  </div>
+
+  <div class="ps-field">
+    <label class="ps-field-k" for="ps-goal" data-ps-t="labelGoal"></label>
+    <select class="ps-select" id="ps-goal">
+      <option value="ABBAU" data-ps-t="goalAbbau"></option>
+      <option value="BEFREIUNG" data-ps-t="goalBefreiung"></option>
+    </select>
+  </div>
+
+  <div class="ps-field">
+    <label class="ps-field-k" for="ps-level" data-ps-t="labelLevel"></label>
+    <input class="ps-input ps-input-num" id="ps-level" type="number"
+           min="1" max="999" step="1" value="1" inputmode="numeric">
+  </div>
+
+  <div class="ps-field">
+    <label class="ps-field-k" for="ps-speed" data-ps-t="labelSpeed"></label>
+    <select class="ps-select" id="ps-speed">
+      <option value="0.5" data-ps-t="speedSlow"></option>
+      <option value="1" selected data-ps-t="speedNormal"></option>
+      <option value="1.5" data-ps-t="speedFast"></option>
+      <option value="2" data-ps-t="speedTurbo"></option>
+    </select>
+  </div>
+
+  <div class="ps-toggles">
+    <label class="ps-toggle" id="ps-xray-label">
+      <input type="checkbox" id="ps-xray">
+      <span data-ps-t="labelXray"></span>
+    </label>
+    <label class="ps-toggle" id="ps-mute-label">
+      <input type="checkbox" id="ps-mute">
+      <span data-ps-t="labelMute"></span>
+    </label>
+    <span class="ps-chip" id="ps-skin-chip"></span>
+  </div>
+
+</footer>
+
+<!-- --- Sieg ----------------------------------------------------------- -->
+<div class="ps-overlay" id="ps-win" role="dialog" aria-modal="true"
+     aria-labelledby="ps-win-title" hidden>
+  <div class="ps-panel ps-dialog">
+    <h2 class="ps-title" id="ps-win-title" data-ps-t="winTitle"></h2>
+    <p class="ps-stars"><span id="ps-win-stars-on"></span><span id="ps-win-stars-off"></span></p>
+    <p class="ps-sub" id="ps-win-sub"></p>
+
+    <dl class="ps-summary">
+      <div class="ps-summary-item">
+        <dt data-ps-t="labelMoves"></dt><dd class="ps-num" id="ps-win-moves"></dd>
+      </div>
+      <div class="ps-summary-item">
+        <dt data-ps-t="labelTime"></dt><dd class="ps-num" id="ps-win-time"></dd>
+      </div>
+      <div class="ps-summary-item">
+        <dt data-ps-t="labelPar"></dt><dd class="ps-num" id="ps-win-par"></dd>
+      </div>
+      <div class="ps-summary-item">
+        <dt data-ps-t="labelUndos"></dt><dd class="ps-num" id="ps-win-undos"></dd>
+      </div>
+    </dl>
+
+    <form class="ps-form" id="ps-win-form" autocomplete="off" novalidate>
+      <label class="ps-field-k" for="ps-name" data-ps-t="labelName"></label>
+      <div class="ps-form-row">
+        <input class="ps-input" id="ps-name" type="text" maxlength="24"
+               autocapitalize="words" spellcheck="false" data-ps-tp="namePlaceholder">
+        <button type="submit" class="ps-btn ps-btn-primary" id="ps-btn-submit"
+                data-ps-t="btnSubmit"></button>
+      </div>
+    </form>
+
+    <p class="ps-note" id="ps-win-note" role="status" aria-live="polite"></p>
+
+    <div class="ps-dialog-actions">
+      <button type="button" class="ps-btn ps-btn-primary" id="ps-btn-win-next" data-ps-t="btnNext"></button>
+      <button type="button" class="ps-btn" id="ps-btn-win-board" data-ps-t="btnBoard"></button>
+      <button type="button" class="ps-btn" id="ps-btn-win-close" data-ps-t="btnClose"></button>
+    </div>
+  </div>
+</div>
+
+<!-- --- Sackgasse ------------------------------------------------------ -->
+<div class="ps-overlay" id="ps-deadend" role="dialog" aria-modal="true"
+     aria-labelledby="ps-deadend-title" hidden>
+  <div class="ps-panel ps-dialog ps-dialog-narrow">
+    <h2 class="ps-title" id="ps-deadend-title" data-ps-t="deadEndTitle"></h2>
+    <p class="ps-sub" data-ps-t="deadEndText"></p>
+    <div class="ps-dialog-actions">
+      <button type="button" class="ps-btn ps-btn-primary" id="ps-btn-dead-undo" data-ps-t="btnUndo"></button>
+      <button type="button" class="ps-btn" id="ps-btn-dead-restart" data-ps-t="btnRestart"></button>
+    </div>
+  </div>
+</div>
+
+<!-- --- Bestenliste ---------------------------------------------------- -->
+<div class="ps-overlay" id="ps-board" role="dialog" aria-modal="true"
+     aria-labelledby="ps-board-title" hidden>
+  <div class="ps-panel ps-dialog ps-dialog-wide">
+    <h2 class="ps-title" id="ps-board-title" data-ps-t="boardTitle"></h2>
+    <div class="ps-table-wrap">
+      <table class="ps-table">
+        <thead>
+          <tr>
+            <th scope="col" data-ps-t="colRank"></th>
+            <th scope="col" data-ps-t="colName"></th>
+            <th scope="col" data-ps-t="colMoves"></th>
+            <th scope="col" data-ps-t="colTime"></th>
+            <th scope="col" class="ps-col-opt" data-ps-t="colUndos"></th>
+            <th scope="col" class="ps-col-opt" data-ps-t="colSize"></th>
+            <th scope="col" class="ps-col-opt" data-ps-t="colMode"></th>
+          </tr>
+        </thead>
+        <tbody id="ps-board-rows"></tbody>
+      </table>
+    </div>
+    <p class="ps-note" id="ps-board-empty" hidden data-ps-t="boardEmpty"></p>
+    <div class="ps-dialog-actions">
+      <button type="button" class="ps-btn ps-btn-primary" id="ps-btn-board-close" data-ps-t="btnClose"></button>
+    </div>
+  </div>
+</div>
+
+<div class="ps-toast" id="ps-toast" role="status" aria-live="polite" hidden></div>
+
+<div id="ps-crt" aria-hidden="true"></div>
+
+<noscript>
+  <div class="ps-noscript">
+    Pfeilspiel braucht JavaScript und WebGL. Bitte aktivieren Sie JavaScript in Ihrem Browser.
+  </div>
+</noscript>
+
+</body>
+</html>
