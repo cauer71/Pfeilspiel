@@ -177,17 +177,7 @@ export function createScene(renderer) {
   const fxGroup = new THREE.Group();
   fxGroup.name = 'psFxGroup';
 
-  // Platzhaltergeometrie; createTowerView ersetzt sie durch die Turmmasse.
-  const coreBox = new THREE.Mesh(
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshStandardMaterial({ color: 0x0e1116, roughness: 1, metalness: 0 })
-  );
-  coreBox.name = 'psCoreBox';
-  coreBox.visible = false;
-  coreBox.matrixAutoUpdate = false;
-  coreBox.updateMatrix();
-
-  worldRig.add(towerGroup, coreBox, flyingGroup, fxGroup);
+  worldRig.add(towerGroup, flyingGroup, fxGroup);
   scene.add(worldRig);
 
   const hemi = new THREE.HemisphereLight(0x8fa3bd, 0x0a0c10, 0.55);
@@ -224,14 +214,11 @@ export function createScene(renderer) {
     if (envRT) { envRT.dispose(); envRT = null; }
     scene.environment = null;
     if (key.shadow && key.shadow.map) { key.shadow.map.dispose(); key.shadow.map = null; }
-    coreBox.geometry.dispose();
-    coreBox.material.dispose();
   };
 
   return {
     scene, worldRig, towerGroup, flyingGroup, fxGroup,
-    lights: { hemi, key, fill },
-    coreBox
+    lights: { hemi, key, fill }
   };
 }
 
@@ -787,11 +774,11 @@ export function buildCapVariant(dirWorld, rowFromTop, extWorld) {
 /**
  * Die 12 Turmvarianten: 6 Weltrichtungen x {NORMAL, TARGET} (SPEC §8.5).
  * Schluessel `${dirWorldKey}|${rowFromTop}`.
- * @param {'FASSADE'|'VOLUMEN'} mode
+ * @param {'VOLUMEN'} mode
  * @returns {Map<string, THREE.BufferGeometry>}
  */
 export function buildVariantSet(mode) {
-  if (mode !== 'FASSADE' && mode !== 'VOLUMEN') throw new RangeError('Modus: FASSADE oder VOLUMEN');
+  if (mode !== 'VOLUMEN') throw new RangeError('Modus: nur VOLUMEN');
   const set = new Map();
   for (let d = 0; d < 6; d++) {
     const v = FACE_N[d];   // identisch zu DIR6
@@ -1092,7 +1079,6 @@ export function createTowerView(ctx) {
   const towerGroup = findGroup(scene, 'psTowerGroup');
   const flyingGroup = findGroup(scene, 'psFlyingGroup');
   const fxGroup = findGroup(scene, 'psFxGroup');
-  const coreBox = scene.getObjectByName('psCoreBox') || null;
 
   const maxAniso = (renderer && renderer.capabilities && renderer.capabilities.getMaxAnisotropy)
     ? renderer.capabilities.getMaxAnisotropy() : 1;
@@ -1111,39 +1097,6 @@ export function createTowerView(ctx) {
 
   const scratch = [0, 0, 0];
   const center = new THREE.Vector3(0, 0, 0);
-
-  // --- Innenkern (nur FASSADE) -----------------------------------------
-  let coreGeo = null;
-  let coreMat = null;
-  if (coreBox) {
-    coreGeo = new THREE.BoxGeometry(
-      Math.max(0.1, board.W - 1.1), Math.max(0.1, board.H - 1.1), Math.max(0.1, board.D - 1.1));
-    const old = coreBox.geometry;
-    coreBox.geometry = coreGeo;
-    if (old) old.dispose();
-    coreMat = makeCoreMaterial(skin);
-    const oldMat = coreBox.material;
-    coreBox.material = coreMat;
-    if (oldMat) oldMat.dispose();
-    coreBox.position.set(0, 0, 0);
-    coreBox.updateMatrix();
-  }
-
-  function makeCoreMaterial(s) {
-    const tok = (s && s.three && s.three.coreBox) ? s.three.coreBox : {};
-    const op = tok.opacity === undefined ? 1 : tok.opacity;
-    return new THREE.MeshStandardMaterial({
-      color: colorOf(tok.color, 0x0e1116),
-      roughness: 1, metalness: 0,
-      transparent: op < 1, opacity: op,
-      side: THREE.FrontSide
-    });
-  }
-
-  function updateCore() {
-    if (!coreBox) return;
-    coreBox.visible = board.mode === 'FASSADE' && aliveCount >= 8;
-  }
 
   // --- Effektticker (Vorschaublende, rotes Aufblitzen) -------------------
   const jobs = [];
@@ -1356,7 +1309,6 @@ export function createTowerView(ctx) {
     }
     xray = false;
     peel = 0;
-    updateCore();
     requestRender();
   }
 
@@ -1392,7 +1344,7 @@ export function createTowerView(ctx) {
     xray = !!on;
     for (const c of cubes) {
       if (!c.alive) continue;
-      const outer = board.mode === 'FASSADE' ? true : shellOf(c.cell) === 0;
+      const outer = shellOf(c.cell) === 0;
       const g = xray && outer;
       if (g !== c.ghosted) { c.ghosted = g; refresh(c); }
     }
@@ -1555,14 +1507,13 @@ export function createTowerView(ctx) {
       if (cube.mesh.parent !== towerGroup) towerGroup.add(cube.mesh);
       // Schale kann sich geaendert haben: Roentgen und Schichtenregler nachziehen.
       cube.hidden = board.mode === 'VOLUMEN' && peel > 0 && shellOf(move.to) < peel;
-      cube.ghosted = xray && (board.mode === 'FASSADE' || shellOf(move.to) === 0);
+      cube.ghosted = xray && shellOf(move.to) === 0;
       applyVisibility(cube);
     }
     cube.mesh.updateMatrix();
     if (cube.fadeMat) releaseFade(cube);
     else refresh(cube);
     cube.busy = false;
-    updateCore();
     requestRender();
   }
 
@@ -1588,7 +1539,7 @@ export function createTowerView(ctx) {
         belegeZellen(cube, cell);
         aliveCount++;
         cube.hidden = board.mode === 'VOLUMEN' && peel > 0 && shellOf(cell) < peel;
-        const outer = board.mode === 'FASSADE' ? true : shellOf(cell) === 0;
+        const outer = shellOf(cell) === 0;
         cube.ghosted = xray && outer;
       } else {
         cube.alive = false;
@@ -1603,7 +1554,6 @@ export function createTowerView(ctx) {
       cube.mesh.updateMatrix();
     }
     hoveredId = null;
-    updateCore();
     requestRender();
   }
 
@@ -1611,7 +1561,6 @@ export function createTowerView(ctx) {
   function setSkin(nextSkin) {
     const oldAtlas = atlas;
     const oldMats = mats;
-    const oldCoreMat = coreMat;
     skin = nextSkin;
     atlas = buildAtlas(skin, maxAniso);
     mats = buildMaterialSet(skin, atlas);
@@ -1623,10 +1572,6 @@ export function createTowerView(ctx) {
       }
       refresh(cube);
     }
-    if (coreBox) {
-      coreMat = makeCoreMaterial(skin);
-      coreBox.material = coreMat;
-    }
     for (const o of previewObjects) {
       o.material = (o.geometry === carrierGeo) ? mats.carrier : mats.preview;
     }
@@ -1635,7 +1580,6 @@ export function createTowerView(ctx) {
     raf(() => {
       for (const m of oldMats.all()) m.dispose();
       oldAtlas.dispose();
-      if (oldCoreMat) oldCoreMat.dispose();
     });
     requestRender();
   }
@@ -1654,15 +1598,10 @@ export function createTowerView(ctx) {
     if (carrierGeo) { carrierGeo.dispose(); carrierGeo = null; }
     for (const m of mats.all()) m.dispose();
     atlas.dispose();
-    if (coreBox) {
-      coreBox.visible = false;
-      if (coreMat) { coreMat.dispose(); coreMat = null; }
-      if (coreGeo) { coreGeo.dispose(); coreGeo = null; }
-    }
   }
 
   const view = {
-    towerGroup, flyingGroup, fxGroup, coreBox,
+    towerGroup, flyingGroup, fxGroup,
     board,
     center,
     material: mats.base,

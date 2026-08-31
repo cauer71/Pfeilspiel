@@ -95,9 +95,9 @@ async function mitKurzemZeitlimit(fn) {
 
 function gueltigerLauf(aenderungen) {
   return Object.assign({
-    name: 'Anna', dirMode: 'fassade', goalMode: 'abbau',
+    name: 'Anna', dirMode: 'volumen', goalMode: 'abbau',
     size: { x: 5, y: 7, z: 5 }, cubes: 121, moves: 121, undos: 3, timeMs: 73210,
-    seed: 589116, levelCode: 'F-A-5x7x5-0-0008FA3C', ruleVersion: 1, genVersion: 1,
+    seed: 589116, levelCode: 'V-A-5x7x5-0-0008FA3C', ruleVersion: 1, genVersion: 1,
     runId: '3f6d1c2a-9b41-4a77-8a0e-1d5b7c9e2f04',
     clientId: '7c2e5b18-0d33-4f9a-9c11-a2b3c4d5e6f7', appVersion: '1.0.0'
   }, aenderungen || {});
@@ -128,10 +128,10 @@ test('1. getScores baut die Abfrage in fester Reihenfolge', async () => {
 
     await getScores({
       bestPerName: true, offset: 5, limit: 10,
-      size: { x: 5, y: 7, z: 5 }, goal: 'ABBAU', dir: '  Fassade  '
+      size: { x: 5, y: 7, z: 5 }, goal: 'ABBAU', dir: '  Volumen  '
     });
     assert.equal(aufrufe[2].url,
-      '/api/records?dir=fassade&goal=abbau&size=5x7x5&limit=10&offset=5&bestPerName=1');
+      '/api/records?dir=volumen&goal=abbau&size=5x7x5&limit=10&offset=5&bestPerName=1');
 
     await getScores({ size: '5X7X5', limit: '12.9', offset: -0.4, bestPerName: '1' });
     assert.equal(aufrufe[3].url, '/api/records?size=5x7x5&limit=12&offset=0&bestPerName=1');
@@ -155,7 +155,7 @@ test('2. getScores schickt GET ohne Zugangsdaten und mit Accept-Kopf', async () 
 
 test('3. getScores reicht Datensaetze und total durch', async () => {
   const zeile = {
-    rank: 1, id: 4711, name: 'Anna', dirMode: 'fassade', goalMode: 'abbau',
+    rank: 1, id: 4711, name: 'Anna', dirMode: 'volumen', goalMode: 'abbau',
     size: { x: 5, y: 7, z: 5 }, sizeKey: '5x7x5', cubes: 121, moves: 121,
     undos: 3, timeMs: 73210, verified: true, createdAt: '2026-08-30T18:22:41.000Z'
   };

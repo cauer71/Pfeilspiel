@@ -10,6 +10,12 @@ Generatorversion `GEN_VERSION = 3`.
 2. **Kein Schritt, kein Sprung.** Ein Stein bewegt sich genau dann, wenn seine Bahn in
    Pfeilrichtung bis zum Rand vollstaendig frei ist — dann verlaesst er den Turm ganz. Steht
    irgendwo auf dieser Bahn ein anderer Stein, passiert nichts.
+3. **Nur noch ein Richtungsmodus.** Die Schalenvariante `FASSADE` ist entfallen; es gibt nur
+   `VOLUMEN` (§1.4). Sie war ein zweiter Geometriezweig durch Board, Generator und Renderschicht,
+   ohne dem Spiel eine eigene Aufgabe zu geben.
+4. **Groessere Tuerme.** Die Kurve waechst bis 8×16×8 (§6.11), und im freien Spiel ist die
+   Turmgroesse aus einer Liste bis 8×8-Grundflaeche waehlbar. `MAX_CUBES = 1200` bleibt der
+   harte Deckel.
 
 Zur zweiten Aenderung, weil sie zwei fruehere Fassungen zuruecknimmt: v1 hatte die
 Halma-Sprungkette, v2 zusaetzlich das Rutschen bei freier Bahn. Beide liessen einen sichtbar
@@ -21,11 +27,12 @@ die zweite Rueckwaertsoperation des Generators (`unRelocate`) und alle Kettenken
 **Basisentwurf:** Entwurf **C** (flacher Zellindex + vorberechnete Schritttabelle) hat alle drei
 Urteile gewonnen und ist die Grundlage. Verbindlich eingearbeitet sind die von den Judges
 ausdruecklich angeordneten Uebernahmen aus **B** (Vorwaertsverifikation im Produktivpfad,
-minDepth-Fuellsatz als beweisbarer Rueckfall, `genVersion`, `jumped`-Zellen, Zugvorschau,
+minDepth-Fuellsatz als beweisbarer Rueckfall, `genVersion`, Blockierzellen, Zugvorschau,
 Determinismusregeln, Fuzz-Harness, sechs Regressionsfixtures) und aus **A** (CPU-seitige
 Pfeildarstellung statt Shaderinjektion, CSS-CRT statt Postprocessing, Innenkern-Box,
 Roentgenmodus, Sackgassen-Overlay, URL-Hash, `par` als Richtwert, harte Dimensionsassertion,
-bezifferte Deployment-Artefakte).
+bezifferte Deployment-Artefakte). Zwei dieser Uebernahmen sind seit v3 gegenstandslos: die
+Innenkern-Box (der Turm ist massiv, §8.6) und der Richtungsmodus FASSADE (§1.4).
 
 Schluesselwoerter MUSS / DARF NICHT / SOLL sind normativ zu lesen. Wo diese Datei und ein
 Entwurfstext sich widersprechen, gilt diese Datei.
@@ -94,7 +101,7 @@ Blockierer selbst gegangen ist. Genau darin besteht das Spiel: die richtige Reih
 | RF-2 | Die ganze Bahn ist frei | `EXIT`. `path` nennt jede durchlaufene Ankerzelle, die Startzelle eingeschlossen, und endet an der letzten Zelle vor dem Rand. |
 | RF-3 | Irgendeine Zelle der Bahn ist von einem fremden Stein besetzt | `INVALID` (`reason:'BLOCKED'`). `blocker` nennt **genau die zuerst getroffenen** Blockierzellen — nicht alle auf der Bahn. |
 | RF-4 | Stein bereits ausgeschieden (`alive == 0`), leere Zelle oder entarteter Zellindex | `INVALID` (`reason:'DEAD'`), `blocker` leer. |
-| RF-5 | FASSADE: „ausserhalb“ heisst **ausserhalb des eigenen Wandrechtecks**. Ein Stein einer Nachbarwand existiert fuer die Regel nicht — er blockiert nicht. | Kein Ueberklettern auf die Nachbarwand; `path` und `blocker` liegen stets auf derselben Wand. |
+| RF-5 | „ausserhalb“ heisst **ausserhalb des Quaders**: `step` liefert `OUT`. Es gibt keine Flaechen und keine Nachbarwaende mehr, an denen eine Bahn enden koennte. | `path` und `blocker` liegen stets auf demselben Strahl in Richtung `d`. |
 | RF-6 | Ein gueltiger Zug entfernt **genau einen** Stein. Alle uebrigen bleiben unberuehrt. | Undo ist deshalb exakt invers und O(1). |
 | RF-7 | Ein 2x1-Stein ist starr: der Ausleger (`extOf`) aendert sich nie, und beide Zellen verlassen den Turm gemeinsam. | Testgegenstand, §10.12. |
 | RF-8 | Terminierung | `d` ist konstant, die Lage waechst je Iteration um `d` auf einem endlichen Strahl. `path.length` ist hoechstens `max(W,H,D)`. |
@@ -108,13 +115,19 @@ der Startaufstellung (zwei Steine, die aufeinander zeigen), nie durch Fehlzuege.
 
 ### 1.4 Modi
 
-**Richtungsmodus** (im Spiel umschaltbar, beide voll funktionsfaehig):
+**Richtungsmodus** — es gibt genau einen:
 
-* `FASSADE` — hohle Schale: 4 Seitenwaende plus vollflaechiger Deckel, kein Boden. Jede Wand ist
-  ein 2D-Gitter; der Pfeil zeigt in der Ebene seiner Wand (4 Richtungen). Am Wandrand faellt der
-  Wuerfel heraus.
-* `VOLUMEN` — massiver Quader; jeder Wuerfel hat eine von 6 echten Raumrichtungen. Pfeile zeigen
+* `VOLUMEN` — massiver Quader; jeder Stein hat eine von 6 echten Raumrichtungen. Pfeile zeigen
   auch ins Turminnere.
+
+Die frueher waehlbare Schalenvariante `FASSADE` (hohle Schale aus vier Seitenwaenden und einem
+Deckel, vier Wandrichtungen) ist **entfallen**. Sie war ein zweiter Geometriezweig durch
+`buildBoard`, `cellKey`, den Generator und die Renderschicht, ohne dem Spiel eine eigene Aufgabe
+zu geben: derselbe Turm, nur hohl. `buildBoard` weist jeden anderen Modus als `VOLUMEN` mit
+`RangeError` ab, `parseLevelCode` jeden Code mit dem Praefix `F-`, und `parseHash` jedes
+`m=` ungleich `VOLUMEN` — ein alter Link soll kein stillschweigend anderes Level erzeugen.
+Beim ABFRAGEN der Bestenliste bleibt `dir=fassade` gueltig, weil in D1 Eintraege aus jener Zeit
+stehen; EINGEREICHT wird nur noch `volumen` (§9.4).
 
 **Zielmodus** (pro Level konfiguriert):
 
@@ -132,8 +145,8 @@ der Startaufstellung (zwei Steine, die aufeinander zeigen), nie durch Fehlzuege.
   zurueck. Undos werden separat gezaehlt (`undos`) und an die Bestenliste gemeldet.
 * **`par`:** Laenge der Referenzloesung, also eine **obere Schranke**, kein Optimum. Im HUD MUSS
   es als „Richtwert“ beschriftet werden. Der Server DARF NICHT `moves >= par` verlangen.
-* **Zugvorschau:** Desktop-Hover bzw. Longpress ≥ 600 ms zeigt `move.path` als Geisterspur und
-  `move.jumped` als aufleuchtende Traeger, bevor der Zug festgeschrieben wird.
+* **Zugvorschau:** Desktop-Hover bzw. Longpress ≥ 600 ms zeigt `move.path` als Geisterspur,
+  bevor der Zug festgeschrieben wird; bei `INVALID` blitzt stattdessen `move.blocker[0]` rot auf.
 
 ---
 
@@ -178,7 +191,7 @@ worldOf(x, y, z) = [ (x - (W-1)/2) * CELL,
 Der Turm ist damit um den Ursprung zentriert; `controls.target` liegt bei
 `(0, H*CELL*0.04, 0)`.
 
-### 2.2 Modus VOLUMEN
+### 2.2 Modus VOLUMEN (der einzige Richtungsmodus)
 
 Zellen: `x in [0,W)`, `y in [0,H)`, `z in [0,D)`. `C = W*H*D`.
 
@@ -202,8 +215,6 @@ Richtungen `d = 0..5`, alle gueltig:
 step[i*6+d] = (x+dx in [0,W) && y+dy in [0,H) && z+dz in [0,D)) ? idx(x+dx,y+dy,z+dz) : OUT
 valid[i*6+d] = 1 fuer alle d
 dirWorld[i][d] = DIR6[d]            // zellunabhaengig
-faceOf[i] = 255                     // keine Wandflaeche
-outNormal[i] = (0,0,0)              // kein Aussennormalen-Konzept
 ```
 
 **Austrittstiefe** (fuer den Fuellrueckfall, §6.5):
@@ -215,83 +226,32 @@ depth(i, 4)= D-1-z   depth(i,5)= z
 minDepth(i) = min ueber alle 6 d
 ```
 
-### 2.3 Modus FASSADE
+### 2.3 Kontrollwerte der Zellzahl
 
-Hohle Schale: 4 Seitenwaende (`v in [0,H-2]`, also `H-1` Reihen) plus **vollflaechiger Deckel**
-(`y = H-1`, `W*D` Zellen). Kein Boden. Ost/West sind um je eine Spalte eingerueckt, damit die vier
-Eckspalten genau einmal belegt sind.
-
-Fuenf Flaechen `f = 0..4`, jede mit lokalen Koordinaten `(u,v)`, `u` = optisch rechts,
-`v` = optisch oben, von aussen betrachtet. Konvention **`U × V = Nout`** (rechtshaendig) gilt fuer
-alle fuenf Flaechen und ist Testgegenstand.
-
-| f | Name | uMax | vMax | Abbildung `(u,v) → (x,y,z)` | `U` | `V` | `Nout` |
-|---|---|---|---|---|---|---|---|
-| 0 | `SUED` (vorn) | `W` | `H-1` | `(W-1-u, v, 0)` | `(-1,0,0)` | `(0,1,0)` | `(0,0,-1)` |
-| 1 | `OST` (rechts) | `D-2` | `H-1` | `(W-1, v, D-2-u)` | `(0,0,-1)` | `(0,1,0)` | `(1,0,0)` |
-| 2 | `NORD` (hinten) | `W` | `H-1` | `(u, v, D-1)` | `(1,0,0)` | `(0,1,0)` | `(0,0,1)` |
-| 3 | `WEST` (links) | `D-2` | `H-1` | `(0, v, 1+u)` | `(0,0,1)` | `(0,1,0)` | `(-1,0,0)` |
-| 4 | `DECKEL` | `W` | `D` | `(u, H-1, D-1-v)` | `(1,0,0)` | `(0,0,-1)` | `(0,1,0)` |
-
-`u in [0, uMax-1]`, `v in [0, vMax-1]`.
-
-```js
-off[0] = 0
-off[f+1] = off[f] + uMax[f] * vMax[f]
-idx(f,u,v) = off[f] + v*uMax[f] + u
-C = off[5] = 2*W*(H-1) + 2*(D-2)*(H-1) + W*D
-```
-
-Kontrollwerte (Pflichttest, alle nachgerechnet):
+`C = W*H*D`. Pflichttest, alle nachgerechnet:
 
 | W×H×D | C |
 |---|---|
-| 3×3×3 | 25 |
-| 4×4×4 | 52 |
-| 5×6×5 | 105 |
-| 4×5×3 | 52 |
-| 7×7×4 | 136 |
-| 5×7×5 | 5·6·2 + 3·6·2 + 25 = 121 |
+| 3×4×3 | 36 |
+| 4×4×4 | 64 |
+| 4×6×4 | 96 |
+| 5×8×5 | 200 |
+| 6×12×6 | 432 |
+| 8×8×8 | 512 |
+| 8×16×8 | 1024 |
 
-Richtungen `d = 0..3` flaechenlokal; `d = 4,5` sind ungueltig (`valid[i*6+d] = 0`):
-
-| d | Name | `(du,dv)` | opp[d] |
-|---|---|---|---|
-| 0 | `RECHTS` | `(+1, 0)` | 2 |
-| 1 | `HOCH` | `( 0,+1)` | 3 |
-| 2 | `LINKS` | `(-1, 0)` | 0 |
-| 3 | `RUNTER` | `( 0,-1)` | 1 |
-
-```js
-step[idx(f,u,v)*6+d] =
-    (u+du in [0,uMax[f]) && v+dv in [0,vMax[f])) ? idx(f, u+du, v+dv) : OUT
-```
-
-Ein Flaechenwechsel findet **nie** statt. Der Rechteck-Test der Wand erledigt „am Wandrand faellt
-der Wuerfel heraus“ von selbst (RF-10).
-
-```js
-dirWorld[i][d] = du * U[faceOf[i]] + dv * V[faceOf[i]]     // vorberechnet, Float32Array
-outNormal[i]   = Nout[faceOf[i]]                            // Aussennormale der Wand
-```
-
-**Austrittstiefe** in FASSADE:
-
-```
-depth(i,0)= uMax-1-u   depth(i,2)= u
-depth(i,1)= vMax-1-v   depth(i,3)= v
-minDepth(i) = min ueber d in {0,1,2,3}
-```
+Dieselbe Formel steht im Worker als `capacity('volumen', x, y, z)` (§9.4); §10.11 prueft die
+Uebereinstimmung mit `buildBoard().C` fuer jede zulaessige Dimension. Fuer jeden anderen
+`dirMode` liefert `capacity` `NaN` — die Schalenvariante ist entfallen (§1.4) und der Worker
+darf keine falsche Obergrenze erfinden.
 
 ### 2.4 Nachweisbare Eigenschaften (Testgegenstand, §10)
 
-1. Die fuenf Flaechenrechtecke sind **disjunkt**: `SUED` hat `z=0`, `NORD` hat `z=D-1`;
-   `OST`/`WEST` haben `z in [1,D-2]` und `x = W-1` bzw. `x = 0` (verschieden, da `W>=3`);
-   `DECKEL` hat `y = H-1`, die Seitenwaende nur `y <= H-2`.
-2. Alle Weltpositionen sind **paarweise eindeutig**.
-3. `U × V = Nout` fuer alle fuenf Flaechen.
-4. `step` ist unter `opp` symmetrisch: `step[step[i*6+d]*6+opp[d]] === i`, wo `step[i*6+d] != OUT`.
-5. `depth` ist 1-Lipschitz auf dem Zellgraphen und faellt entlang der Richtung `d*` mit
+1. `idx` ist auf `[0,W) x [0,H) x [0,D)` bijektiv; Gitterkoordinaten und Weltpositionen sind
+   **paarweise eindeutig**.
+2. `valid[i*6+d] === 1` fuer alle `i` und alle `d in [0,6)`.
+3. `step` ist unter `opp` symmetrisch: `step[step[i*6+d]*6+opp[d]] === i`, wo `step[i*6+d] != OUT`.
+4. `depth` ist 1-Lipschitz auf dem Zellgraphen und faellt entlang der Richtung `d*` mit
    `depth(i,d*) === minDepth(i)` um genau 1 pro Schritt (Grundlage des Fuellsatzes §6.5).
 
 ---
@@ -306,17 +266,15 @@ JSON-serialisierbar; `Board` und `State` sind es nicht (TypedArrays) und werden 
 ```js
 /**
  * @typedef {Object} Board
- * @property {'FASSADE'|'VOLUMEN'} mode
+ * @property {'VOLUMEN'} mode
  * @property {number} W @property {number} H @property {number} D
  * @property {number} C                 Zellzahl
  * @property {Int32Array}  step         [C*6]  Nachbarindex oder OUT(-1)
  * @property {Uint8Array}  valid        [C*6]  1 = Richtung in dieser Zelle erlaubt
  * @property {Int8Array}   opp          [6]    Gegenrichtung
- * @property {Uint8Array}  dirCount      Anzahl gueltiger Richtungen: 4 (FASSADE) | 6 (VOLUMEN)
+ * @property {number}      dirCount     Anzahl gueltiger Richtungen: stets 6
  * @property {Float32Array} worldPos    [C*3]  Weltmittelpunkt jeder Zelle
  * @property {Float32Array} dirWorld    [C*6*3] Weltvektor je (Zelle,Richtung)
- * @property {Uint8Array}  faceOf       [C]    FASSADE 0..4, VOLUMEN 255
- * @property {Float32Array} outNormal   [C*3]  Aussennormale der Wand; VOLUMEN (0,0,0)
  * @property {Int32Array}  lattice      [C*3]  (x,y,z) je Zelle, fuer Darstellung/Serialisierung
  * @property {Int32Array}  depthOf      [C*6]  Austrittstiefe je (Zelle,Richtung)
  * @property {Int32Array}  minDepthOf   [C]    min ueber alle gueltigen Richtungen
@@ -355,22 +313,21 @@ aufsteigend sortierbar, und der Zeugenzug nennt stets den Anker.
 ```js
 /**
  * @typedef {Object} Move
- * @property {'STEP'|'JUMP'|'EXIT'|'INVALID'} kind
+ * @property {'EXIT'|'INVALID'} kind          nur zwei Ausgaenge (RULE_VERSION 3)
  * @property {'BLOCKED'|'DEAD'|undefined} reason   nur bei INVALID
  * @property {number} cubeId
- * @property {number} from            Zellindex des Starts
- * @property {number} to              Zellindex des Ziels, oder OUT(-1) bei EXIT/INVALID
- * @property {number} jumps           0 = Schritt, >=1 = Zahl der Sprungglieder
- * @property {number[]} path          [from, ...Landepunkte]; bei EXIT endet er auf dem
- *                                    letzten Landepunkt IM Gitter (der Flug nach aussen
- *                                    wird aus dirWorld[from|last] gerendert)
- * @property {number[]} jumped        uebersprungene, besetzte Zellen (Animation, Sound, Vorschau)
+ * @property {number} from            Ankerzelle des Starts
+ * @property {number} to              stets OUT(-1): ein Zug endet ausserhalb oder gar nicht
+ * @property {number[]} path          [from, ...durchlaufene Ankerzellen]; endet auf der
+ *                                    letzten Zelle IM Gitter (der Flug nach aussen wird aus
+ *                                    dirWorld[from] gerendert)
+ * @property {number[]} blocker       die zuerst getroffenen besetzten Zellen; bei EXIT leer
  */
 ```
 
-`INVALID` liefert `{kind:'INVALID', reason, cubeId, from, to:OUT, jumps:0, path:[from], jumped:[]}`.
-Bei `reason:'BLOCKED'` enthaelt `jumped` genau die blockierende Zelle `n1` — sie wird rot
-aufblitzen gelassen.
+`INVALID` liefert `{kind:'INVALID', reason, cubeId, from, to:OUT, path:[from], blocker}`.
+Bei `reason:'BLOCKED'` nennt `blocker` genau die zuerst getroffenen Zellen — sie werden rot
+aufblitzen gelassen. Bei `reason:'DEAD'` ist `blocker` leer.
 
 ### 3.4 Undo
 
@@ -396,7 +353,7 @@ aufblitzen gelassen.
  * @property {number} genVersion           GEN_VERSION
  * @property {number} seed                 uint32
  * @property {number} attempt              akzeptierter Versuchsindex 0..11 (siehe §6.7)
- * @property {'FASSADE'|'VOLUMEN'} mode
+ * @property {'VOLUMEN'} mode
  * @property {'ABBAU'|'BEFREIUNG'} goal
  * @property {{W:number,H:number,D:number}} dims
  * @property {string} levelCode            z.B. "F-A-4x5x4-1-0008FA3C"
@@ -406,8 +363,10 @@ aufblitzen gelassen.
  * @property {number[]} witness            Zellindizes in Klickreihenfolge (Referenzloesung)
  * @property {number} par                  === witness.length
  * @property {number[]} stars              [par, ceil(par*1.12), ceil(par*1.25)]
- * @property {{density:number, chainShare:number, maxChain:number,
- *             mobility:number, naivePerPar:number, trivialExit:number}} metrics
+ * @property {{density:number, mobility:number, naivePerPar:number}} metrics
+ *           density = Anteil belegter ZELLEN; mobility = Anteil ziehbarer Steine im
+ *           Startzustand; naivePerPar = Zuege eines zufaellig tippenden Laufs durch par
+ *           (0, solange nicht gemessen). Kettenkennzahlen sind mit dem Sprung entfallen.
  */
 ```
 
@@ -420,16 +379,18 @@ und macht Referenzloesung und Replay formatgleich.
 /**
  * @typedef {Object} LevelSpec
  * @property {number} seed @property {number} attempt
- * @property {'FASSADE'|'VOLUMEN'} mode @property {'ABBAU'|'BEFREIUNG'} goal
+ * @property {'VOLUMEN'} mode @property {'ABBAU'|'BEFREIUNG'} goal
  * @property {number} W @property {number} H @property {number} D
  * @property {number} density        Zieldichte 0..1
  * @property {number} dominoRate     Anteil der Runden, in denen ein 2x1-Stein statt eines
  *                                   1x1-Wuerfels gesetzt wird (0..1). Folgt wie density aus
  *                                   (Modus, Ziel, Masse), damit ein Level allein aus seinem
  *                                   Levelcode bitgleich nachbaubar bleibt.
- * @property {{wFill:number,wChain:number,wFrag:number,wDiv:number,wSil:number,wRand:number}} weights
- * @property {{naivePerPar:[number,number], chainShare:[number,number],
- *             mobility:[number,number], trivialExit:[number,number]}} bands
+ * @property {{wFill:number,wDiv:number,wSil:number,wRand:number}} weights
+ * @property {{mobility:[number,number]}} bands   Nur noch die Beweglichkeit: unter
+ *                                   RULE_VERSION 3 ist par gleich der Steinzahl und die
+ *                                   Reihenfolge irrelevant (§1.3), also tragen naivePerPar,
+ *                                   chainShare und trivialExit keine Information mehr.
  * @property {number} targetQuantile  nur BEFREIUNG, 0..1
  */
 ```
@@ -442,7 +403,7 @@ und macht Referenzloesung und Replay formatgleich.
  *  @property {string} clientId       UUID v4 aus localStorage
  *  @property {string} levelCode
  *  @property {number} seed @property {number} genVersion @property {number} ruleVersion
- *  @property {'fassade'|'volumen'} dirMode @property {'abbau'|'befreiung'} goalMode
+ *  @property {'volumen'} dirMode @property {'abbau'|'befreiung'} goalMode
  *  @property {{x:number,y:number,z:number}} size
  *  @property {number} cubes @property {number} moves @property {number} undos
  *  @property {number} timeMs
@@ -504,20 +465,17 @@ export const EXT_NONE: 255;          // extOf-Wert eines einzelligen Steins
 export const MAX_STEIN_ZELLEN: 2;    // groesste Zellzahl eines Steins
 export const DIR6: ReadonlyArray<[number,number,number]>;          // PX,NX,PY,NY,PZ,NZ
 export const DIR6_NAMES: ['PX','NX','PY','NY','PZ','NZ'];
-export const FDIR4_NAMES: ['RECHTS','HOCH','LINKS','RUNTER'];
-export const FACES: ReadonlyArray<{id:string, U:number[], V:number[], N:number[]}>; // 5 Eintraege
 
 // --- Board -------------------------------------------------------------
-export function buildBoard(spec: {mode:'FASSADE'|'VOLUMEN', W:number, H:number, D:number}): Board;
-//   wirft RangeError bei W<3 || D<3 || H<2 oder C*? > MAX_CUBES-Grenzen (§2.0)
+export function buildBoard(spec: {mode?:'VOLUMEN', W:number, H:number, D:number}): Board;
+//   wirft RangeError bei mode !== 'VOLUMEN', bei W<3 || D<3 || H<2 oder C > MAX_CUBES (§2.0)
 export function cellKey(board: Board, i: number): string;
-//   FASSADE: `F${f}:${u}:${v}`   VOLUMEN: `V:${x}:${y}:${z}`
+//   `V:${x}:${y}:${z}`
 export function cellIndexOf(board: Board, key: string): number;   // -1 wenn unbekannt
 export function latticeOf(board: Board, i: number): [number,number,number];
 export function worldPosOf(board: Board, i: number, out?: Float32Array|number[]): number[];
 export function dirWorldOf(board: Board, i: number, d: number, out?: number[]): number[];
-export function outNormalOf(board: Board, i: number, out?: number[]): number[];
-export function validDirs(board: Board, i: number): number[];      // [0..3] oder [0..5]
+export function validDirs(board: Board, i: number): number[];      // stets [0,1,2,3,4,5]
 export function depthOf(board: Board, i: number, d: number): number;
 export function minDepthOf(board: Board, i: number): number;
 export function bestExitDirs(board: Board, i: number): number[];
@@ -596,10 +554,12 @@ export function solveGreedy(board: Board, state: State, rng: () => number, maxSt
 export function levelSpecFor(n: number): LevelSpec;
 export function encodeLevelCode(spec: LevelSpec): string;
 //   `${M}-${G}-${W}x${H}x${D}-${attempt}-${seed.toString(16).toUpperCase().padStart(8,'0')}`
-//   M in {F,V}, G in {A,B}. Beispiel: "F-A-4x5x4-0-0008FA3C"
+//   M ist stets V, G in {A,B}. Beispiel: "V-A-4x5x4-0-0008FA3C"
+//   parseLevelCode wirft bei jedem anderen M — die Variante FASSADE ist entfallen (§1.4)
 export function parseLevelCode(code: string): LevelSpec;           // wirft bei Formatfehler
 export function encodeHash(spec: LevelSpec): string;
-//   "#s=8fa3c&m=FASSADE&g=ABBAU&d=5x7x5&a=0&r=1&gv=1"   (A-Uebernahme, teilbar per Link)
+//   "#s=8fa3c&m=VOLUMEN&g=ABBAU&d=5x7x5&a=0&r=3&gv=3"   (teilbar per Link)
+//   parseHash liefert null bei jedem anderen m, jeder fremden r/gv
 export function parseHash(hash: string): LevelSpec | null;
 
 // --- Kennzahlen -----------------------------------------------------------
@@ -619,7 +579,7 @@ export function createRenderer(canvas: HTMLCanvasElement,
                                opts?: {lowEnd?: boolean}): THREE.WebGLRenderer;
 export function createScene(renderer): {
   scene, worldRig, towerGroup, flyingGroup, fxGroup,
-  lights: {hemi, key, fill}, coreBox: THREE.Mesh
+  lights: {hemi, key, fill}
 };
 export function createCamera(aspect: number): THREE.PerspectiveCamera;   // fov 45
 export function createControls(camera, canvas, opts?: {minPolarDeg?, maxPolarDeg?}): OrbitControls;
@@ -635,7 +595,7 @@ export const TILE: {PLAIN:0, ARROW:1, TIP:2, TAIL:3};
 export const ROW:  {NORMAL:0, TARGET:1, HINT:2};
 export function buildAtlas(skin: SkinTokens, maxAnisotropy: number):
     {map, emissiveMap, redraw(skin): void, dispose(): void};
-export function buildVariantSet(mode: 'FASSADE'|'VOLUMEN'):
+export function buildVariantSet(mode: 'VOLUMEN'):
     Map<string, THREE.BufferGeometry>;   // Schluessel `${dirWorldKey}|${rowFromTop}`
 
 // --- Turmansicht ----------------------------------------------------------
@@ -818,51 +778,44 @@ Eine einzige Implementierung in `src/game.js`. Sie liest ausschliesslich
 
 ```js
 export function resolveMove(board, state, cell) {
+  if (!Number.isInteger(cell) || cell < 0 || cell >= board.C)      // RF-4, entartete Eingabe
+    return ungueltig('DEAD', EMPTY, cell);
+
   const id = state.occ[cell];
-  if (id === EMPTY || !state.alive[id])
-    return { kind:'INVALID', reason:'DEAD', cubeId:id, from:cell, to:OUT,
-             jumps:0, path:[cell], jumped:[] };
+  if (id === EMPTY || !state.alive[id])                            // RF-4
+    return ungueltig('DEAD', id, cell);
 
-  const d  = state.dirOf[id];
-  const st = board.step;                       // Int32Array, OUT = -1
+  const d     = state.dirOf[id];
+  const st    = board.step;                    // Int32Array, OUT = -1
+  const anker = state.cellOf[id];
 
-  // --- Phase 1: erster Zug -------------------------------------------------
-  const n1 = st[cell*6 + d];
-  if (n1 === OUT)                              // RF-1
-    return { kind:'EXIT', cubeId:id, from:cell, to:OUT, jumps:0,
-             path:[cell], jumped:[] };
-  if (state.occ[n1] === EMPTY)                 // RF-2, Regel R1
-    return { kind:'STEP', cubeId:id, from:cell, to:n1, jumps:0,
-             path:[cell, n1], jumped:[] };
-
-  const n2 = st[n1*6 + d];
-  if (n2 === OUT)                              // RF-3: Sprung ueber den Rand hinaus
-    return { kind:'EXIT', cubeId:id, from:cell, to:OUT, jumps:1,
-             path:[cell], jumped:[n1] };
-  if (state.occ[n2] !== EMPTY)                 // RF-4, Regel R4
-    return { kind:'INVALID', reason:'BLOCKED', cubeId:id, from:cell, to:OUT,
-             jumps:0, path:[cell], jumped:[n1] };
-
-  // Regel R2: erster Sprung ist vollzogen
-  let cur = n2, jumps = 1;
-  const path = [cell, n2], jumped = [n1];
-
-  // --- Phase 2: Kette, NUR weitere Spruenge (Regel R3) ---------------------
+  // Die Bahn wird Zelle fuer Zelle abgeschritten. `lauf` sind die aktuell belegten Zellen
+  // des Steins (eine bei 1x1, zwei bei 2x1), `vorruecken` schiebt sie um einen Schritt.
+  let lauf = zellenVon(state, id), schritte = 0;
   for (;;) {
-    const over = st[cur*6 + d];
-    if (over === OUT) break;                          // RF-5
-    if (state.occ[over] === EMPTY) break;             // RF-6: kein Schritt hinter dem Sprung
-    const land = st[over*6 + d];
-    if (land === OUT) {                               // RF-7
-      jumped.push(over);
-      return { kind:'EXIT', cubeId:id, from:cell, to:OUT, jumps:jumps+1, path, jumped };
-    }
-    if (state.occ[land] !== EMPTY) break;             // RF-8
-    cur = land; jumps++; path.push(land); jumped.push(over);
+    const ziel    = vorruecken(st, lauf, d);
+    const blocker = besetzteVon(state, ziel, id);                  // fremde Steine only
+    if (blocker.length > 0)                                        // R2 / RF-3
+      return ungueltig('BLOCKED', id, anker, blocker);
+    schritte++;
+    if (enthaeltAus(ziel))                                         // R1 / RF-1, RF-2
+      return { kind:'EXIT', cubeId:id, from:anker, to:OUT,
+               path: bahn(st, anker, d, schritte), blocker: [] };
+    lauf = ziel;
   }
-  return { kind:'JUMP', cubeId:id, from:cell, to:cur, jumps, path, jumped };
 }
 ```
+
+**Grenze vor Belegung.** Die Belegung wird geprueft, *bevor* auf `OUT` getestet wird — aber
+`besetzteVon` ueberspringt `OUT`-Einträge, es gibt dort nichts zu besetzen. Sobald eine der
+Zellen des Steins das Gitter verlaesst, ist der Zug ein Austritt (RF-1).
+
+**Kein Zwischenzustand.** Es gibt keinen Ausgang, bei dem der Stein im Gitter stehen bleibt und
+sich dennoch bewegt hat. `to` ist immer `OUT`. Ein blockierter Stein bleibt exakt, wo er ist —
+`applyMove` tut bei `INVALID` nichts (§5.1).
+
+**Terminierung** (RF-8): `d` ist konstant, jede Iteration schiebt den Stein einen Schritt weiter
+auf einem endlichen Strahl. Nach hoechstens `max(W,H,D)` Iterationen liegt eine Zelle ausserhalb.
 
 ### 5.1 Zustandsuebergang
 
@@ -951,10 +904,10 @@ jede MUSS vom Kandidatentest **verworfen** werden (§10.3).
 
 | # | Name | Beschreibung |
 |---|---|---|
-| N1 | Ketten-Ueberschuss | Von `A` laeuft die Kette ueber das geplante Ziel `B` hinaus, weil `B+d` besetzt und `B+2d` frei ist. `resolveMove(...).to !== B` → verworfen. |
-| N2 | Ketten-Unterschuss | Die Kette stoppt vor `B`, weil eine Huepfzelle frei oder eine Landezelle besetzt ist. |
-| N3 | Schritt statt Sprung | `A+d` ist frei → `resolveMove` liefert `STEP` statt der geplanten Kette. |
-| N4 | Feste Pfeile | Pro Rueckwaertszug wird eine Richtung frei gewaehlt → Wuerfel mit widerspruechlichen Pfeilen. Verboten: bei `unRelocate` gilt die **bestehende** Richtung des Wuerfels. |
+| N1 | Verstellte Bahn | Irgendeine Zelle zwischen `A` und dem Rand ist besetzt → `resolveMove` liefert `INVALID`, nicht `EXIT`. Der Kandidat MUSS verworfen werden. |
+| N2 | Zweite Spur vergessen | Bei einem 2x1-Stein ist nur die Ankerspur frei, die Spur der zweiten Zelle nicht. |
+| N3 | Falsche Richtung | Die gewaehlte Richtung fuehrt nicht bis zum Rand hinaus, weil ein anderer neu gesetzter Stein davor steht. |
+| N4 | Feste Pfeile | Pro Rueckwaertszug wird eine Richtung frei gewaehlt → Steine mit widerspruechlichen Pfeilen. Die Richtung eines gesetzten Steins aendert sich danach nie. |
 | N5 | Zustandsdrift | Verifikation gegen den Endzustand statt gegen den Zustand, der zur Spielzeit vorliegt. |
 | N6 | Austritts-Umkehr | Ein ausgeflogener Wuerfel wird an einer Stelle wieder eingesetzt, an der er im dann aktuellen, dichteren Zustand nicht austritt. |
 
@@ -1010,7 +963,7 @@ ist der Zielzustand.
 
 ### 6.5 Fuellrueckfall mit bewiesener Terminierung (minDepth, aus B)
 
-Der score-gierige Kandidatenlauf kann bei hoher Zieldichte und engem `maxChain` stocken. Statt
+Der score-gierige Kandidatenlauf kann bei hoher Zieldichte stocken. Statt
 eines Backtracking-Zweigs (ungetesteter Code auf dem einzigen Rettungspfad) wird dann auf die
 **tiefenmonotone Fuellung** umgeschaltet:
 
@@ -1035,8 +988,7 @@ fillByDepth(board, state, ref, rng):
 Schritt. Der Korridor `q, q+d*, …` besteht daher aus Zellen der Tiefen `k-1, k-2, …, 0` mit
 `k = minDepth(q)`, alle **strikt kleiner** als `k`. Zellen kleinerer Tiefe stehen in der
 absteigenden Ordnung spaeter, sind also noch leer; Zellen gleicher Tiefe liegen nicht auf dem
-Korridor. Damit ist `q+d*` frei und liegt entweder noch im Gitter (`STEP`-Korridor) oder
-ausserhalb. Der erste Zug ist somit nie blockiert, und die Zellen des Korridors bleiben leer, bis
+Korridor. Damit ist der ganze Korridor frei. Der Zug ist somit nie blockiert, und die Zellen des Korridors bleiben leer, bis
 der Wuerfel ausgetreten ist. ∎
 
 Der Fuellrueckfall wird auch benutzt, wenn nach dem Hauptlauf die Zieldichte verfehlt wird
@@ -1049,42 +1001,43 @@ Folgezug.
 ```js
 function tryGenerate(board, spec, rng) {
   const state = emptyState(board, board.C, spec.goal);
-  const ref = [];                                  // Zellindizes, Klickreihenfolge
-  const N = Math.min(MAX_CUBES, Math.round(spec.density * board.C));
-  let guard = 60 * N;
+  const ref = [];      // Zellindizes in Klickreihenfolge
+  const info = [];     // parallel dazu: {cell, cubeId, kind}
+  // N zaehlt belegte ZELLEN, nicht Steine: ein 2x1-Stein fuellt zwei (§6.11).
+  const N = Math.min(MAX_CUBES, board.C, Math.round(spec.density * board.C));
+  let guard = 60 * N + 60;
 
-  while (state.aliveCount < N && guard-- > 0) {
-    const useRelocate = state.aliveCount > 2 && rng() < spec.relocateRate;
-    let cands = useRelocate ? unRelocateCandidates(board, state, rng, spec)
-                            : unExitCandidates(board, state, rng, spec);
-    if (cands.length === 0)
-      cands = useRelocate ? unExitCandidates(board, state, rng, spec)
-                          : unRelocateCandidates(board, state, rng, spec);
-    if (cands.length === 0) break;                 // -> Fuellrueckfall
-    applyUnMove(state, pickMax(cands, c => score(board, state, c, spec, rng)), ref);
+  let voll = belegteZellen(state);
+  while (voll < N && guard-- > 0) {
+    // Steinform der Runde vorab waehlen; ein 2x1-Stein braucht zwei freie Zellen.
+    const willZwei = (N - voll) >= 2 && rng() < (spec.dominoRate || 0);
+    let cands = unExitCandidates(board, state, rng, spec, willZwei);
+    if (cands.length === 0 && willZwei)
+      cands = unExitCandidates(board, state, rng, spec, false);   // Rueckfall auf 1x1
+    if (cands.length === 0) break;                                // -> Fuellrueckfall
+    applyUnMove(state, waehleBesten(board, state, cands, spec, rng), ref, info);
+    voll = belegteZellen(state);
   }
 
-  if (state.aliveCount < N) fillByDepth(board, state, ref, rng);   // §6.5, bewiesen
-  return { state, ref };
+  if (voll < N) fillByDepth(board, state, ref, rng, { limit: N, info });   // §6.5, bewiesen
+  return { state, ref, info };
 }
 ```
 
 Kandidatensuche ist gedeckelt: freie Zellen gemischt, hoechstens 80 Zellen betrachtet, Abbruch bei
-200 Kandidaten; bei `unRelocate` hoechstens 40 Wuerfel, Abbruch bei 60 Kandidaten. `maxChain` wird
-**im Kandidatenfilter** durchgesetzt, nie als Nachfilter.
+200 Kandidaten. Ein Kandidat wird ausschliesslich dadurch angenommen, dass `resolveMove` auf dem
+Zustand, der zu seiner Spielzeit vorliegt, `EXIT` liefert — nie durch einen Nachfilter.
 
 ```js
 score(board, state, c, spec, rng) =
-    spec.weights.wFill  * belegteNachbarn(board, state, c.cell) / 6
-  + spec.weights.wChain * Math.min(c.move.jumps, spec.maxChain)
-  + spec.weights.wFrag  * frischeDerTraeger(state, c.move.jumped)   // 1 - mittleres Alter/normiert
-  + spec.weights.wDiv   * richtungsVielfalt(board, state, c.cell, c.dir)
-  + spec.weights.wSil   * silhouettenBonus(board, c.cell)
-  + spec.weights.wRand  * rng();
+    spec.weights.wFill * belegteNachbarn(board, state, c.cell)
+  + spec.weights.wDiv  * richtungsVielfalt(board, state, c.cell, c.dir)
+  + spec.weights.wSil  * silhouettenBonus(board, c.cell)
+  + spec.weights.wRand * rng();
+// wChain und wFrag sind mit den Sprungketten entfallen.
 ```
 
-Standardgewichte (`levelSpecFor`): `wFill 1.00`, `wChain 2.50`, `wFrag 0.60`, `wDiv 0.90`,
-`wSil 0.35`, `wRand 0.25`. `richtungsVielfalt` ist nicht kosmetisch: ohne sie waehlt der
+Standardgewichte (`levelSpecFor`): `wFill 1.00`, `wDiv 0.90`, `wSil 0.35`, `wRand 0.25`. `richtungsVielfalt` ist nicht kosmetisch: ohne sie waehlt der
 Rueckwaertsbau bevorzugt „Randzelle, Pfeil nach aussen“ und erzeugt Waende identischer Pfeile.
 
 ### 6.7 Versuchsschleife, Baender und Levelcode
@@ -1152,35 +1105,54 @@ Wuerfel draussen ist; `witness = ref.slice(0, g+1)`, `par = g+1`. Der Restturm b
 ### 6.10 Unabhaengiger Solver (`solveGreedy`)
 
 `solveGreedy` ist **nicht** Teil der Garantie, sondern liefert die Kennzahl `naivePerPar` und
-dient als zweite Meinung im Test: er spielt mit einer der Politiken `zufall` / `gierig`
-(bevorzugt Zuege mit `kind === 'EXIT'`) / `weit` (bevorzugt grosses `jumps`) bis zum Sieg oder bis
+dient als zweite Meinung im Test: er spielt mit einer der Politiken `zufall` / `nah`
+(kuerzeste `move.path`) / `weit` (laengste `move.path`) bis zum Sieg oder bis
 `hasAnyMove() === false`. In `tests/generator.test.js` MUSS er ueber alle Fixtures hinweg an
 Generatorleveln **niemals** in einer Sackgasse enden, bevor er mindestens einen Zug getan hat, und
 `naivePerPar = zuegeNaiv / par` wird als Kennzahl protokolliert.
 
 ### 6.11 Levelkurve (`levelSpecFor`, explizite Tabelle)
 
-| Stufe | Level | Modus | Ziel | W×H×D | Dichte | 2×1-Anteil | q | Sterne |
-|---|---|---|---|---|---|---|---|---|
-| 1 | 1–3 | FASSADE | ABBAU | 3×4×3 | 0.95 | 0 | – | par / 1.15 / 1.35 |
-| 2 | 4–8 | FASSADE | ABBAU | 4×6×4 | 0.92 | 0.18 | – | par / 1.15 / 1.30 |
-| 3 | 9–12 | FASSADE | BEFREIUNG | 4×8×4 | 0.95 | 0.30 | 0.55 | par / 1.15 / 1.30 |
-| 4 | 13–18 | FASSADE | ABBAU | 5×10×5 | 0.92 | 0.30 | – | par / 1.12 / 1.25 |
-| 5 | 19–22 | VOLUMEN | BEFREIUNG | 3×5×3 | 0.85 | 0.30 | 0.60 | par / 1.12 / 1.25 |
-| 6 | 23–30 | VOLUMEN | ABBAU | 4×6×4 | 0.85 | 0.30 | – | par / 1.12 / 1.25 |
-| 7 | 31–40 | VOLUMEN | BEFREIUNG | 4×8×4 | 0.90 | 0.30 | 0.80 | par / 1.12 / 1.25 |
-| 8 | 41+ | abwechselnd | abwechselnd | wachsend, **gedeckelt** | 0.90 | 0.30 | 0.70 | par / 1.12 / 1.25 |
+Ein Richtungsmodus (VOLUMEN, §1.4), zwei Zielmodi. Die Kurve besteht aus zwoelf Stufen; jede
+Stufe deckt ein Levelband ab.
 
-Stufe 8, mit `k = n - 41`: `W = D = min(6, 5 + floor(k/30))`,
-`H = min(16, 10 + floor(k/6))` in FASSADE und `H = min(10, 6 + floor(k/8))` in VOLUMEN.
+| Stufe | Level | Ziel | W×H×D | Dichte | 2×1-Anteil | q | Sterne |
+|---|---|---|---|---|---|---|---|
+| 0 | 1–3 | ABBAU | 3×4×3 | 0.95 | 0 | – | par / 1.15 / 1.35 |
+| 1 | 4–8 | ABBAU | 4×6×4 | 0.92 | 0.18 | – | par / 1.15 / 1.30 |
+| 2 | 9–14 | BEFREIUNG | 4×8×4 | 0.92 | 0.30 | 0.55 | par / 1.15 / 1.30 |
+| 3 | 15–20 | ABBAU | 5×8×5 | 0.90 | 0.30 | – | par / 1.12 / 1.25 |
+| 4 | 21–28 | BEFREIUNG | 5×10×5 | 0.90 | 0.30 | 0.60 | par / 1.12 / 1.25 |
+| 5 | 29–36 | ABBAU | 6×10×6 | 0.88 | 0.30 | – | par / 1.12 / 1.25 |
+| 6 | 37–46 | BEFREIUNG | 6×12×6 | 0.88 | 0.30 | 0.70 | par / 1.12 / 1.25 |
+| 7 | 47–58 | ABBAU | 7×12×7 | 0.86 | 0.30 | – | par / 1.12 / 1.25 |
+| 8 | 59–70 | ABBAU | 8×8×8 | 0.88 | 0.30 | – | par / 1.12 / 1.25 |
+| 9 | 71–84 | BEFREIUNG | 8×12×8 | 0.86 | 0.30 | 0.70 | par / 1.12 / 1.25 |
+| 10 | 85–100 | ABBAU | 8×16×8 | 0.85 | 0.30 | – | par / 1.10 / 1.22 |
+| 11 | ab 101 | BEFREIUNG | 8×16×8 | 0.85 | 0.30 | 0.70 | par / 1.10 / 1.22 |
 
-**Die Hoehe traegt den Schwierigkeitszuwachs, nicht die Grundflaeche.** Das hat zwei Gruende.
-Erstens die Silhouette: die Vorlage ist ein hoher Turm, kein Wuerfel; eine Grundflaeche von 3 bis 6
-Zellen bei 4 bis 16 Etagen trifft dieses Bild. Zweitens die Zugzahl: bei fester Grundflaeche
-waechst sie in FASSADE wie `2(W+D-2)·(H-1) + W·D`, also **linear** in der Hoehe, waehrend eine
-wachsende Grundflaeche sie kubisch treibt und das Spielgefuehl von Raetsel zu Fleissarbeit kippt.
-Harte Deckel: 6×16×6 in FASSADE (336 Zellen), 6×10×6 in VOLUMEN (360 Zellen), dazu
-`MAX_CUBES = 1200`. Im freien Spiel gelten dieselben Deckel.
+Ab Level 101 wechseln sich die Stufen 10 und 11 ab: gerade Levelnummern ABBAU, ungerade
+BEFREIUNG — beide auf dem groessten Turm.
+
+**Die Hoehe traegt den Schwierigkeitszuwachs, die Grundflaeche folgt langsamer.** Das hat zwei
+Gruende. Erstens die Silhouette: die Vorlage ist ein hoher Turm, kein Wuerfel; `H > max(W,D)`
+gilt auf jeder Stufe ausser der 8×8×8-Stufe, die absichtlich als kubische Abwechslung dasteht.
+Zweitens die Zugzahl: unter RULE_VERSION 3 ist sie genau die Steinzahl, also `density·W·H·D`
+(§5) — in der Hoehe **linear**, in der Grundflaeche **quadratisch**. Deshalb waechst `H` von 4
+auf 16, `W` und `D` nur von 3 auf 8. Der grosse Turm hat 1024 Zellen und bei Dichte 0.85 rund
+870 belegte Zellen; harter Deckel bleibt `MAX_CUBES = 1200`.
+
+**Freie Turmgroesse.** Im freien Spiel ist die Groesse waehlbar, unabhaengig von der Kurve.
+`GROESSEN` (aus `levels.js`, in der Oberflaeche als Auswahlliste) nennt die zulaessigen
+Kombinationen:
+
+```
+3x4x3   4x6x4   5x8x5   6x10x6   6x12x6   7x12x7   8x8x8   8x12x8   8x16x8
+```
+
+Der Zielmodus ist dabei getrennt waehlbar. Jede dieser Groessen liegt unter `MAX_CUBES`, und
+`generateLevel` verifiziert wie immer vorwaerts (§6.8) — auch der 8×16×8-Turm wird also nie
+unverifiziert ausgeliefert. Gemessene Erzeugungsdauer des groessten Turms: rund 70–130 ms.
 
 **Dichte** ist normativ der Anteil **belegter Zellen**, nicht die Steinzahl je Zelle. Ein
 2x1-Stein belegt zwei Zellen; die Steinzahl allein waere von der Steinform abhaengig und als
@@ -1201,8 +1173,8 @@ sie und machen das Level schwerer.
 Baender (`spec.bands`): `naivePerPar [0.00, 1.00]`, `mobility [0.00, 1.00]`.
 
 `metrics` traegt nur noch drei Kennzahlen: `density` (Anteil belegter **Zellen**), `mobility`
-und `naivePerPar`. `chainShare`, `maxChain` und `trivialExit` sind mit den Sprungketten
-entfallen. `naivePerPar` misst, wie weit ein Spieler kommt, der einfach irgendeinen ziehbaren
+und `naivePerPar`. Die Kettenkennzahlen sind mit den Sprungketten entfallen; auch die
+Baender des Generators pruefen nur noch `mobility` (§3.6). `naivePerPar` misst, wie weit ein Spieler kommt, der einfach irgendeinen ziehbaren
 Stein antippt: 1.0 heisst „loest sich von selbst“, kleiner heisst „wer nicht hinschaut, sitzt
 fest“ — in ABBAU ist der Wert wegen der Monotonie stets 1.0, in BEFREIUNG nicht.
 
@@ -1276,7 +1248,6 @@ Akzentfarbe abweichen. Testgegenstand: §10.7.
  *  @property {{emissive:number, emissiveIntensity:number}} hover
  *  @property {{emissive:number, emissiveIntensity:number}} flash   Ungueltig-Blitz (§4.3)
  *  @property {{opacity:number}} ghost                     Roentgenmodus
- *  @property {{color:number, opacity:number}} coreBox     Innenkern-Quader (FASSADE)
  *  @property {AtlasTokens} atlas */
 
 /** @typedef {Object} AtlasTokens
@@ -1375,7 +1346,6 @@ export const SKINS = { modern: {
     hover:{ emissive:0x5B8CFF, emissiveIntensity:0.22 },
     flash:{ emissive:0xE2564A, emissiveIntensity:0.90 },
     ghost:{ opacity:0.16 },
-    coreBox:{ color:0x0E1116, opacity:1.0 },
     atlas:{ tile:256, gutter:16, style:'solidTriangle',
             body:'#F2F1EE', bodyTarget:'#4ADE80', glyph:'#12151A', glyphAlpha:1,
             accent:'#5B8CFF', margin:0.18, shaft:0.24, head:0.56, radius:0.05,
@@ -1453,7 +1423,6 @@ apple: {
     hover:{ emissive:0x0A84FF, emissiveIntensity:0.12 },
     flash:{ emissive:0xFF3B30, emissiveIntensity:0.90 },
     ghost:{ opacity:0.14 },
-    coreBox:{ color:0xD9E1EB, opacity:1.0 },
     atlas:{ tile:256, gutter:16, style:'softChevron',
             body:'#FFFFFF', bodyTarget:'#BFF7CE', glyph:'#1C1C1E', glyphAlpha:0.92,
             accent:'#0A84FF', margin:0.26, shaft:0.22, head:0.50, radius:0.10,
@@ -1543,7 +1512,6 @@ arcade: {
     hover:{ emissive:0xFF2E88, emissiveIntensity:0.50 },
     flash:{ emissive:0xFF3131, emissiveIntensity:0.90 },
     ghost:{ opacity:0.18 },
-    coreBox:{ color:0x05070A, opacity:1.0 },
     atlas:{ tile:128, gutter:16, style:'pixelArrow',
             body:'#EDEDF5', bodyTarget:'#39FF14', glyph:'#12021F', glyphAlpha:1,
             accent:'#FF2E88', margin:0.125, shaft:0.25, head:0.50, radius:0,
@@ -1706,7 +1674,6 @@ Adaptiv: rollierender Mittelwert der Frame-Zeit ueber 60 Frames > 22 ms → `set
 scene
 ├── worldRig      (Group)   <- Screenshake wirkt HIER
 │   ├── towerGroup(Group)   <- Gitterwuerfel, Picking-Layer 1
-│   ├── coreBox   (Mesh)    <- Innenkern (nur FASSADE, s. 8.6)
 │   ├── flyingGroup(Group)  <- ausgeschiedene Wuerfel, KEIN Picking
 │   └── fxGroup   (Group)   <- Geisterspur, Traegerleuchten, Partikel
 ├── hemi, key, key.target, fill
@@ -1796,9 +1763,9 @@ Richtung `d` (Weltvektor aus `board.dirWorld`) und Flaechennormale `n`:
 | `n·d = -1` | `TAIL` (Kreuz im Ring) | Pfeil tritt in diese Flaeche ein |
 | `n·d = 0` | `ARROW`, in der Flaechenebene gedreht | zeigt lateral nach `d` |
 
-In FASSADE liegt `d` immer in der Wandebene, also bekommen Aussen- **und** Innenflaeche den
-lateralen Pfeil, korrekt orientiert — man liest den Pfeil eines fernen Wandwuerfels auch durch ein
-Loch in der nahen Wand hindurch. Ein Variantenbauer bedient beide Modi.
+`d` ist eine der sechs Achsenrichtungen: genau eine Flaeche traegt `TIP`, die gegenueberliegende
+`TAIL`, die vier lateralen Flaechen den gedrehten `ARROW`. Damit ist die Richtung eines Steins
+von jeder Seite ablesbar — auch von der, die man gerade zufaellig sieht.
 
 `BoxGeometry` hat 24 Positionen und 24 UVs (4 pro Flaeche, Flaeche `f` belegt `f*4 … f*4+3`).
 Gemessene UV-Tangentenbasis in r185 (alle rechtshaendig, `Tu × Tv = n`):
@@ -1925,10 +1892,10 @@ einer auf die Mitte.
 
 ### 8.6 Sichtbarkeit
 
-* **Innenkern (FASSADE, aus A):** eine Box `(W-1.1, H-1.1, D-1.1)` in
-  `skin.three.coreBox.color`, damit man durch entstehende Luecken nicht in den hohlen Turm sieht.
-  Wird ausgeblendet, sobald `state.aliveCount < 8`.
-* **Roentgen (VOLUMEN und FASSADE):** Longpress ≥ 600 ms bzw. ein HUD-Schalter setzt alle Wuerfel
+Ein verdeckender Innenkern (`coreBox`) ist mit der Schalenvariante entfallen: der Turm ist ein
+massiver Quader, hinter einer entstehenden Luecke steht wieder ein Stein.
+
+* **Roentgen:** Longpress ≥ 600 ms bzw. ein HUD-Schalter setzt alle Wuerfel
   der aeusseren Schale auf ein zweites geteiltes Material `matGhost`
   (`transparent:true, opacity: skin.three.ghost.opacity, depthWrite:false`).
 * **Schichtenregler (VOLUMEN):** `setPeelLayers(k)` blendet die aeusseren `k` Schalen aus.
@@ -2012,9 +1979,9 @@ Tabelle nennt die Modern-Referenz.
 | **Sprung** (je Glied) | 260 ms | horizontal `inOutCubic`, Bogen `4t(1-t)` mit **rohem** `t` | Bogenhoehe `arc * CELL`, zusaetzlich ±12° Kippen um `dir × up`, bei `t = 1` wieder 0 |
 | **Kettenpause** | 45 ms | – | zwischen zwei Sprungglieder, damit die Kette zaehlbar bleibt |
 | **Wegfliegen** | 420 ms | Position `inQuad`, Scale `outCubic` 1→0.55, Alpha linear ab `t = 0.35` | plus Zufalls-Spin ≈1.5 Umdrehungen |
-| **Wackeln** (ungueltig) | 260 ms | gedaempfter Sinus | `amp * CELL * sin(2π·cycles·t) * (1-t)` **entlang der Pfeilrichtung**, dazu 220 ms rotes Aufblitzen von `move.jumped[0]` |
+| **Wackeln** (ungueltig) | 260 ms | gedaempfter Sinus | `amp * CELL * sin(2π·cycles·t) * (1-t)` **entlang der Pfeilrichtung**, dazu 220 ms rotes Aufblitzen von `move.blocker[0]` |
 | **Kamera-Refit** | 500 ms | `inOutCubic` | `Spherical`-Lerp, `controls.enabled = false` |
-| **Vorschau** | 120 ms Einblenden | `outCubic` | Geisterspur entlang `move.path`, Traeger aus `move.jumped` leuchten |
+| **Vorschau** | 120 ms Einblenden | `outCubic` | Geisterspur entlang `move.path` |
 
 Eine 3er-Kette dauert `3·260 + 2·45 = 870 ms` und bleibt damit unter der Sekunde. Der Schritt ist
 bewusst schneller als der Sprung: die Dauer kodiert die Zugart.
@@ -2139,7 +2106,8 @@ Lazy-Bootstrap im Worker ist verboten.
 ### 9.3 API
 
 ```
-GET  /api/records?dir={fassade|volumen}&goal={abbau|befreiung}&size={WxHxD}
+GET  /api/records?dir={volumen|fassade}&goal={abbau|befreiung}&size={WxHxD}
+//   fassade bleibt beim ABFRAGEN gueltig (Altbestand in D1); EINGEREICHT wird nur volumen
                  &limit={1..100=20}&offset={0..1000=0}&bestPerName={1}
 POST /api/records                       Content-Type: application/json, Body <= 8192 Byte
 OPTIONS /api/records                    -> 204, Allow-Methods: GET, POST, OPTIONS
@@ -2157,11 +2125,11 @@ vielen Schluesseln.
 
 ```json
 { "ok": true,
-  "query": {"dir":"fassade","goal":"abbau","size":"5x7x5","limit":20,"offset":0,"bestPerName":false},
+  "query": {"dir":"volumen","goal":"abbau","size":"5x7x5","limit":20,"offset":0,"bestPerName":false},
   "total": 137,
   "records": [{
     "rank":1, "id":4711, "name":"Anna",
-    "dirMode":"fassade", "goalMode":"abbau",
+    "dirMode":"volumen", "goalMode":"abbau",
     "size":{"x":5,"y":7,"z":5}, "sizeKey":"5x7x5",
     "cubes":121, "moves":121, "undos":3, "timeMs":73210, "verified":true,
     "createdAt":"2026-08-30T18:22:41.000Z" }] }
@@ -2171,10 +2139,10 @@ vielen Schluesseln.
 
 ```json
 { "name":"Anna",
-  "dirMode":"fassade", "goalMode":"abbau",
+  "dirMode":"volumen", "goalMode":"abbau",
   "size":{"x":5,"y":7,"z":5},
   "cubes":121, "moves":121, "undos":3, "timeMs":73210,
-  "seed":589116, "levelCode":"F-A-5x7x5-0-0008FA3C",
+  "seed":589116, "levelCode":"V-A-5x7x5-0-0008FA3C",
   "ruleVersion":1, "genVersion":1,
   "taps":[12,47,3,...],
   "runId":"3f6d1c2a-9b41-4a77-8a0e-1d5b7c9e2f04",
@@ -2213,13 +2181,14 @@ UI-tauglich.
 
 ```js
 export function capacity(dirMode, x, y, z) {          // x=W, y=H, z=D
-  return dirMode === 'volumen'
-    ? x * y * z
-    : 2 * (y - 1) * (x + z - 2) + x * z;              // 4 Waende (H-1 Reihen) + voller Deckel
+  if (dirMode !== 'volumen') return NaN;   // FASSADE ist entfallen (§1.4)
+  return x * y * z;
 }
 ```
 
-Kontrolle: `capacity('fassade',3,3,3) = 2*2*4 + 9 = 25` ✓ (identisch zu §2.3).
+Kontrolle: `capacity('volumen',4,4,4) = 64` ✓ (identisch zu §2.3). Fuer jeden anderen `dirMode`
+liefert die Funktion `NaN`; die Einreichung faellt dann durch die Kapazitaetspruefung, statt an
+einer erfundenen Grenze gemessen zu werden.
 
 **Untere Zugschranke:**
 
@@ -2472,39 +2441,39 @@ existieren.
    * `board.C` stimmt mit der Formel `2*W*(H-1) + 2*(D-2)*(H-1) + W*D` bzw. `W*H*D` ueberein;
    * die Kontrollwerte aus §2.3 (25 / 52 / 105 / 52 / 136 / 121) werden namentlich geprueft;
    * alle Gitterkoordinaten `lattice[i]` sind **paarweise eindeutig** (Disjunktheit der
-     Wandrechtecke) — als `Set` ueber `x*10000 + y*100 + z`;
+     — als `Set` ueber `x*10000 + y*100 + z`;
    * alle Weltpositionen sind paarweise eindeutig;
    * kein Wert von `lattice` liegt ausserhalb `[0,W)×[0,H)×[0,D)`.
-3. `U × V = Nout` fuer alle fuenf FASSADE-Flaechen.
+3. `buildBoard` weist jeden Modus ausser `VOLUMEN` mit `RangeError` ab; ohne Angabe gilt `VOLUMEN`.
 4. Symmetrie: fuer alle `i`, `d` mit `valid[i*6+d] && step[i*6+d] !== OUT` gilt
    `step[step[i*6+d]*6 + opp[d]] === i`.
 5. `depthOf` ist 1-Lipschitz: `|depth(i,d) - depth(step[i*6+d], d)| === 1` fuer jeden Schritt im
    Gitter; und `depth(i,d*) === minDepth(i)` faellt entlang `d*` um genau 1.
 6. `cellKey`/`cellIndexOf` sind zueinander invers ueber alle Zellen.
-7. In FASSADE ist `valid[i*6+4] === 0` und `valid[i*6+5] === 0` fuer alle `i`.
+7. `valid[i*6+d] === 1` fuer alle `i` und alle sechs `d`; `cellIndexOf` liefert `-1` fuer jeden
+   Schluessel der entfallenen Schalenvariante (`F0:0:0`, `F5:0:0`).
 
 ### 10.2 `tests/rules.test.js` — Zugregel
 
-Tabellengetriebene Fixtures, je ein benannter Fall fuer **RF-1 bis RF-12** aus §1.3. Verbindliche
+Tabellengetriebene Fixtures, je ein benannter Fall fuer **RF-1 bis RF-8** aus §1.3. Verbindliche
 Zusatzfaelle:
 
-1. **Rand vor Belegung:** ein Wuerfel an der Wandkante mit Pfeil zur Kante liefert `EXIT`,
-   unabhaengig davon, ob die geometrisch benachbarte Zelle der **Nachbarwand** belegt ist. Zwei
-   Fixtures (Nachbarwandzelle leer / belegt) MUESSEN dasselbe `Move` liefern.
-2. **Kein Schritt hinter dem Sprung** (RF-6): geplante Kette endet, obwohl das naechste Feld frei
-   und im Gitter waere.
-3. **Sprung ueber den Rand hinaus** (RF-3) als benannter Testfall — diese Auslegung ist Teil von
-   `RULE_VERSION` und darf nicht stillschweigend geaendert werden.
-4. **Terminierung:** vollbelegte Reihe mit alternierendem Muster, Kette laeuft maximal
-   `ceil(max(W,H,D)/2)` Glieder; ein zusaetzlicher Zaehler im Test bricht bei
+1. **Grenze vor Belegung:** ein Stein am Rand mit Pfeil nach draussen liefert `EXIT`, ohne dass
+   irgendeine Belegung ausserhalb des Gitters geprueft wuerde — es gibt sie nicht.
+2. **Kein Schritt, kein Sprung** (RF-3): ein einzelner Blockierer irgendwo auf der Bahn ergibt
+   `INVALID`, auch wenn dahinter alles frei ist und der Stein „eigentlich“ vorbeikoennte. Diese
+   Auslegung ist Teil von `RULE_VERSION` und darf nicht stillschweigend geaendert werden.
+3. **Terminierung:** die Bahn ist nie laenger als `max(W,H,D)`; ein Zaehler im Test bricht bei
    `2*max(W,H,D)` mit Fehler ab.
-5. **Sackgasse existiert:** vollbelegtes Gitter mit allen Pfeilen nach innen ergibt
-   `legalCells().length === 0` (VOLUMEN 5×5×5 und FASSADE 6×6×6). Damit ist bewiesen, dass die
-   Loesbarkeitsgarantie nicht trivial ist.
-6. **Involution:** fuer 10 000 zufaellige (seed-gesteuerte) Zustaende und Zuege gilt
+4. **Sackgasse existiert:** vollbelegtes Gitter mit allen Pfeilen nach innen ergibt
+   `legalCells().length === 0`. Damit ist bewiesen, dass die Loesbarkeitsgarantie nicht trivial
+   ist.
+5. **Involution:** fuer 10 000 zufaellige (seed-gesteuerte) Zustaende und Zuege gilt
    `applyMove` gefolgt von `revertMove` === Identitaet auf `occ`, `cellOf`, `alive`, `aliveCount`.
-7. `move.jumped` enthaelt genau die uebersprungenen, besetzten Zellen; `move.path[0] === from`;
-   `path.length === jumps + 1` bei `JUMP`, `=== 2` bei `STEP`.
+6. `move.path[0] === from`, jede Bahnzelle ist frei, und `move.blocker` nennt genau die zuerst
+   getroffenen besetzten Zellen.
+7. **Verfaelschte Richtung:** `createState` erzeugt fuer jedes `dir` ausserhalb `[0,6)` einen
+   bereits ausgeschiedenen Stein, nie einen lebendigen (Regression, §10.4).
 8. `isSolved` fuer beide Zielmodi; `hasAnyMove` konsistent zu `legalCells().length > 0`.
 
 ### 10.3 `tests/generator.test.js` — Generator und Garantie
@@ -2516,12 +2485,12 @@ Zusatzfaelle:
 2. **Prepend-Semantik:** ein Test, der `ref.push` statt `ref.unshift` simuliert und nachweist,
    dass `verifyLevel` das Ergebnis ablehnt.
 3. **Fuellsatz:** `fillByDepth` auf leerem Board fuellt zu **exakt 100 %**
-   (`aliveCount === board.C`), fuer alle Dimensionen aus 10.1 und beide Modi; jeder erzeugte
-   Referenzzug hat `kind === 'EXIT'`.
-4. **Kennzahlen:** je 100 Level pro Modus und Zielmodus — `maxChain <= spec.maxChain`,
-   `dichte >= spec.density - 0.02`, ABBAU-Referenz raeumt den Turm restlos ab
-   (`aliveCount === 0`), BEFREIUNG-Praefix endet mit dem Austritt des Zielwuerfels.
-5. **Backtracking-/Stockungspfad:** ein Test mit erzwungener Sackgasse (Dichte 1.0, `maxChain 1`,
+   (`aliveCount === board.C`), fuer alle Dimensionen aus 10.1; jeder erzeugte Referenzzug hat
+   `kind === 'EXIT'`.
+4. **Kennzahlen:** je 100 Level pro Zielmodus — `dichte >= spec.density - 0.02`, ABBAU-Referenz
+   raeumt den Turm restlos ab (`aliveCount === 0`), BEFREIUNG-Praefix endet mit dem Austritt des
+   Zielsteins.
+5. **Backtracking-/Stockungspfad:** ein Test mit erzwungener Sackgasse (Dichte 1.0,
    Silhouettenzwang) MUSS den Fuellrueckfall aus §6.5 ausloesen und trotzdem ein verifiziertes
    Level liefern. Der Pfad darf nicht ungetestet bleiben.
 6. **Codes:** `parseLevelCode(encodeLevelCode(spec))` ist die Identitaet auf allen Feldern, die den
@@ -2532,7 +2501,7 @@ Zusatzfaelle:
    `src/game.js` und `src/levels.js` verbietet `Math.random`, `Date.`, `performance.`,
    `document`, `window`, `three`.
 8. **MAX_CUBES:** `levelSpecFor(n)` erzeugt fuer `n in [1, 500]` nie ein Level mit mehr als 1200
-   Wuerfeln und nie eine Groesse ueber dem Deckel aus §6.11.
+   Steinen und nie eine Groesse ueber dem Deckel aus §6.11 (`W,D <= 8`, `H <= 16`).
 
 ### 10.4 `tests/verify.test.js` — Fuzz-Harness (die zentrale Garantiepruefung)
 
@@ -2547,12 +2516,11 @@ jedem Fall.
 
 ```
 fuer seed in 0 .. 9999:
-  fuer mode in {FASSADE, VOLUMEN}:
-    fuer goal in {ABBAU, BEFREIUNG}:
-      fuer dims in {3x3x3, 4x5x4, 5x6x5}:
-         level = generateLevel(spec)
-         assert verifyLevel(level).ok === true
-         protokolliere dichte, par/N, chainShare, maxChain
+  fuer goal in {ABBAU, BEFREIUNG}:
+    fuer dims in {3x3x3, 4x5x4, 5x6x5}:
+       level = generateLevel(spec)
+       assert verifyLevel(level).ok === true
+       protokolliere dichte, par/N, mobility
 ```
 
 `verifyLevel().ok` MUSS in **allen 120 000 Faellen** `true` liefern. Der Fuellgrad wird als
@@ -2581,8 +2549,8 @@ tatsaechlich auf der serialisierten Beschreibung arbeitet und nicht auf dem Gene
 
 ### 10.6 `tests/worker.test.js` — Validierung ohne Netzwerk
 
-1. `capacity('fassade',W,H,D)` stimmt fuer alle Dimensionen aus 10.1 **exakt** mit
-   `buildBoard({mode:'FASSADE',W,H,D}).C` ueberein; ebenso `capacity('volumen',...)` mit `W*H*D`.
+1. `capacity('volumen',W,H,D)` stimmt fuer alle Dimensionen aus 10.1 **exakt** mit
+   `buildBoard({mode:'VOLUMEN',W,H,D}).C` ueberein; jeder andere `dirMode` liefert `NaN`.
    Divergenz wuerde gueltige Einreichungen als `implausible` ablehnen.
 2. `minMoves('abbau', n) === n`, `minMoves('befreiung', n) === 1`. Ein expliziter Negativtest
    stellt sicher, dass **nirgends** eine Distanzschranke (`ceil(Distanz/2)`) eingebaut ist.
@@ -2716,25 +2684,27 @@ Erzeugnis aus §9.8 und der Testlauf selbst.
 
 ### 10.12 `tests/pieces.test.js` — Rutschen und zweizellige Steine
 
-Deckt genau die beiden Erweiterungen ab, die `RULE_VERSION = 2` ausmachen. Pflichtgegenstaende:
+Deckt die zweizelligen Steine unter `RULE_VERSION = 3` ab. Pflichtgegenstaende:
 
-1. **R0** — freie Bahn ergibt `EXIT` mit `jumps === 0`; `path` nennt jede durchlaufene Zelle,
-   die Startzelle eingeschlossen, und endet am Rand.
-2. **Vorrang von R0 vor R1** — ein Blocker an jeder Position der Bahn erzwingt `STEP` um genau
-   ein Feld, ein freier Rest erzwingt den Austritt.
-3. **RF-6 bleibt in Kraft** — hinter einem Sprung wird nicht weitergerutscht.
+1. **R1** — freie Bahn ergibt `EXIT`; `path` nennt jede durchlaufene Ankerzelle, die Startzelle
+   eingeschlossen, und endet an der letzten Zelle vor dem Rand.
+2. **R2** — ein Blocker an jeder einzelnen Position der Bahn erzwingt `INVALID`; `blocker` nennt
+   die zuerst getroffene Zelle. Auch mit freiem Rest hinter dem Blocker bewegt sich nichts.
+3. **Kein Zwischenzustand** — `to === OUT` bei jedem Ausgang; `applyMove` auf `INVALID` ist die
+   Identitaet.
 4. **Belegung** — ein 2x1-Stein steht in beiden Zellen, zaehlt als EIN lebender Stein,
    `dropCube` raeumt beide Zellen.
 5. **Abwehr** — `addCube` wirft, wenn die zweite Zelle ausserhalb oder belegt ist;
    `verifyLevel` lehnt einen Stein mit falschem (groesserem) Anker und eine doppelt belegte
    Zelle ab.
 6. **Bewegung** — laengs der eigenen Achse (der Stein darf sich nicht selbst blockieren), quer
-   dazu (beide Zielfelder noetig), Sprung, Kette und Ungueltig.
-7. **RF-13** — ueber mindestens 200 zufaellige Zuege bleibt `extOf` unveraendert und die
+   dazu (beide Spuren noetig), Austritt und Ungueltig.
+7. **RF-7** — ueber mindestens 200 zufaellige Zuege bleibt `extOf` unveraendert und die
    beiden Zellen bleiben benachbart.
 8. **Umkehrbarkeit** — `applyMove` gefolgt von `revertMove` ist ueber mindestens 500 Zuege mit
    gemischten Steinformen feldweise die Identitaet.
-9. **FASSADE** — kein 2x1-Stein liegt ueber zwei Waenden; der Anker ist stets die kleinere Zelle.
+9. **Lage** — die zweite Zelle jedes 2x1-Steins liegt im Gitter; der Anker ist stets die
+   kleinere Zelle.
 10. **Generator** — die Level der Kurve enthalten tatsaechlich 2x1-Steine und sind verifiziert.
 
 ### 10.13 `tests/e2e.mjs` — Playwright

@@ -9,7 +9,13 @@ export const MAX_TIME_MS = 12 * 60 * 60 * 1000;   // 12 h
 export const MAX_TAPS = 20000;
 export const MAX_UNDOS = 100000;
 
+/**
+ * Beim ABFRAGEN bleiben beide Werte gueltig: in der Datenbank koennen Eintraege aus der
+ * Zeit stehen, in der die Schalenvariante FASSADE spielbar war. EINGEREICHT wird nur noch
+ * 'volumen' (siehe validateSubmission).
+ */
 const DIR_MODES = ['fassade', 'volumen'];
+const DIR_MODES_EINREICHUNG = ['volumen'];
 const GOAL_MODES = ['abbau', 'befreiung'];
 
 const QUERY_KEYS = ['dir', 'goal', 'size', 'limit', 'offset', 'bestPerName'];
@@ -37,9 +43,8 @@ function istInt(v) { return typeof v === 'number' && Number.isInteger(v); }
  * @returns {number}
  */
 export function capacity(dirMode, x, y, z) {
-  return dirMode === 'volumen'
-    ? x * y * z
-    : 2 * (y - 1) * (x + z - 2) + x * z;   // 4 Waende (H-1 Reihen) + voller Deckel
+  if (dirMode !== 'volumen') return NaN;   // FASSADE ist entfallen
+  return x * y * z;
 }
 
 /**
@@ -164,8 +169,8 @@ export function validateSubmission(payload) {
     return fehler('validation', 'name', 'name ist zu lang.');
 
   // --- Modi --------------------------------------------------------------
-  if (typeof payload.dirMode !== 'string' || DIR_MODES.indexOf(payload.dirMode) === -1)
-    return fehler('validation', 'dirMode', 'dirMode muss fassade oder volumen sein.');
+  if (typeof payload.dirMode !== 'string' || DIR_MODES_EINREICHUNG.indexOf(payload.dirMode) === -1)
+    return fehler('validation', 'dirMode', 'dirMode muss volumen sein.');
   if (typeof payload.goalMode !== 'string' || GOAL_MODES.indexOf(payload.goalMode) === -1)
     return fehler('validation', 'goalMode', 'goalMode muss abbau oder befreiung sein.');
 
@@ -207,7 +212,8 @@ export function validateSubmission(payload) {
   if (typeof payload.levelCode !== 'string' || !LEVELCODE_RE.test(payload.levelCode))
     return fehler('validation', 'levelCode', 'levelCode hat ein ungueltiges Format.');
   const lc = LEVELCODE_TEILE.exec(payload.levelCode);
-  const lcDir = lc[1] === 'V' ? 'volumen' : 'fassade';
+  if (lc[1] !== 'V') return fehler('implausible', 'levelCode', 'levelCode nennt einen entfallenen Modus.');
+  const lcDir = 'volumen';
   const lcGoal = lc[2] === 'B' ? 'befreiung' : 'abbau';
   if (lcDir !== payload.dirMode || lcGoal !== payload.goalMode
     || parseInt(lc[3], 10) !== size.x || parseInt(lc[4], 10) !== size.y

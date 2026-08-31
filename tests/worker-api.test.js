@@ -117,7 +117,7 @@ function anfrage(pfad, init) {
 /** Eine D1-Zeile, wie sie die Bestenlistenabfrage liefert. */
 function dbZeile(aenderungen) {
   return Object.assign({
-    id: 17, name: 'Anna', dir_mode: 'fassade', goal_mode: 'abbau',
+    id: 17, name: 'Anna', dir_mode: 'volumen', goal_mode: 'abbau',
     size_x: 5, size_y: 7, size_z: 5, size_key: '5x7x5',
     cubes: 121, moves: 121, undos: 3, time_ms: 73210, verified: 1,
     created_at: Date.UTC(2026, 7, 30, 18, 22, 41)
@@ -128,7 +128,7 @@ function dbZeile(aenderungen) {
 function nutzlast(aenderungen) {
   return Object.assign({
     name: 'Anna',
-    dirMode: 'fassade',
+    dirMode: 'volumen',
     goalMode: 'abbau',
     size: { x: 4, y: 4, z: 4 },
     cubes: 20,
@@ -136,7 +136,7 @@ function nutzlast(aenderungen) {
     undos: 3,
     timeMs: 60000,
     seed: 589116,
-    levelCode: 'F-A-4x4x4-0-0008FA3C',
+    levelCode: 'V-A-4x4x4-0-0008FA3C',
     ruleVersion: RULE_VERSION,
     genVersion: GEN_VERSION,
     runId: '3f6d1c2a-9b41-4a77-8a0e-1d5b7c9e2f04',
@@ -195,7 +195,7 @@ test('1. GET /api/records liefert die in §9.3 beschriebene JSON-Form', async ()
   assert.equal(body.total, 137);
   assert.equal(body.records.length, 2);
   assert.deepEqual(body.records[0], {
-    rank: 1, id: 17, name: 'Anna', dirMode: 'fassade', goalMode: 'abbau',
+    rank: 1, id: 17, name: 'Anna', dirMode: 'volumen', goalMode: 'abbau',
     size: { x: 5, y: 7, z: 5 }, sizeKey: '5x7x5',
     cubes: 121, moves: 121, undos: 3, timeMs: 73210, verified: true,
     createdAt: '2026-08-30T18:22:41.000Z'
@@ -486,24 +486,24 @@ test('16. gueltiger POST ergibt 201 mit Rang und vollstaendiger INSERT-Bindung',
   assert.equal(ins.bind[2], '7c2e5b18-0d33-4f9a-9c11-a2b3c4d5e6f7'); // client_id
   assert.equal(ins.bind[3], 'Anna');                                 // name
   assert.equal(ins.bind[4], 'anna');                                 // name_key
-  assert.equal(ins.bind[5], 'fassade');
+  assert.equal(ins.bind[5], 'volumen');
   assert.equal(ins.bind[6], 'abbau');
   assert.deepEqual(ins.bind.slice(7, 11), [4, 4, 4, '4x4x4']);
   assert.deepEqual(ins.bind.slice(11, 15), [20, 25, 3, 60000]);
-  assert.equal(ins.bind[16], 'F-A-4x4x4-0-0008FA3C');
+  assert.equal(ins.bind[16], 'V-A-4x4x4-0-0008FA3C');
   assert.equal(ins.bind[20], 0, 'ohne taps keine Verifikation');
   assert.match(String(ins.bind[21]), /^[0-9a-f]{16}$/, 'ip_hash ist ein 16-stelliger Hex-Praefix');
   assert.equal(ins.bind[21].indexOf('203.0.113.7'), -1, 'die Roh-IP wird nie gespeichert');
   assert.match(ins.sql, /ON CONFLICT\(run_id\) DO NOTHING/);
 
   const rang = letztesSql(db, /moves < \?4/);
-  assert.deepEqual(rang.bind.slice(0, 3), ['fassade', 'abbau', '4x4x4']);
+  assert.deepEqual(rang.bind.slice(0, 3), ['volumen', 'abbau', '4x4x4']);
 });
 
 test('17. zweiter POST mit derselben run_id ist idempotent (200, duplicate)', async () => {
   const bestehend = {
     id: 4711, created_at: 1756500000000, moves: 25, time_ms: 60000,
-    verified: 1, dir_mode: 'fassade', goal_mode: 'abbau', size_key: '4x4x4'
+    verified: 1, dir_mode: 'volumen', goal_mode: 'abbau', size_key: '4x4x4'
   };
   const db = macheDb({ insert: null, select: bestehend, rang: 2, gesamt: 137 });
   const res = await worker.fetch(postAnfrage(nutzlast()), macheEnv({ db }), {});
@@ -761,7 +761,7 @@ test('30. jeder Nutzerwert kommt als Bindung, nicht per Zeichenkettenverkettung'
   };
   try {
     await worker.fetch(anfrage('/api/records?dir=volumen&goal=befreiung&size=5x7x5&limit=9&offset=4'), env, ctx);
-    await worker.fetch(anfrage('/api/records?bestPerName=1&dir=fassade'), env, ctx);
+    await worker.fetch(anfrage('/api/records?bestPerName=1&dir=volumen'), env, ctx);
     await worker.fetch(postAnfrage(nutzlast({
       name: geheim.name, runId: geheim.runId, clientId: geheim.clientId,
       dirMode: 'volumen', goalMode: 'befreiung', size: { x: 5, y: 7, z: 5 },
@@ -812,7 +812,7 @@ test('31. der Rang benutzt dieselbe Tiebreak-Reihenfolge wie die Bestenliste', a
     const rang = letztesSql(db, /moves < \?4/);
     assert.equal(rang.bind.length, 8);
     assert.deepEqual(rang.bind, [
-      'fassade', 'abbau', '4x4x4',
+      'volumen', 'abbau', '4x4x4',
       25,               // moves
       0,                // verified
       60000,            // time_ms
@@ -832,6 +832,6 @@ test('31. der Rang benutzt dieselbe Tiebreak-Reihenfolge wie die Bestenliste', a
     // Die Gesamtzahl zaehlt dasselbe Brett ohne die Rangbedingungen.
     const gesamt = letztesSql(db, /^SELECT COUNT\(\*\) AS n FROM records\n WHERE status = 'ok' AND dir_mode = \?1/);
     assert.ok(gesamt, 'Gesamtabfrage abgesetzt');
-    assert.deepEqual(gesamt.bind, ['fassade', 'abbau', '4x4x4']);
+    assert.deepEqual(gesamt.bind, ['volumen', 'abbau', '4x4x4']);
   }
 });

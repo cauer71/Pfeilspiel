@@ -191,28 +191,39 @@ try {
     await page.screenshot({ path: join(AUS, `skin-${skin}.png`) });
   }
 
-  // --- Richtungsmodus VOLUMEN ---------------------------------------------
-  await page.evaluate(() => {
-    const el = document.getElementById('ps-mode');
-    el.value = 'VOLUMEN';
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-  await page.waitForFunction(() => globalThis.__pfeilspiel.zustand().modus === 'VOLUMEN', null, { timeout: 30000 });
-  await page.waitForTimeout(900);
-  const vol = await page.evaluate(() => globalThis.__pfeilspiel.zustand());
-  pruefe(vol.modus === 'VOLUMEN' && vol.lebend > 0, `Modus VOLUMEN laedt (${vol.lebend} Wuerfel)`);
-  const volLegal = await page.evaluate(() => globalThis.__pfeilspiel.legaleZellen());
-  pruefe(volLegal.length > 0, `VOLUMEN hat gueltige Zuege (${volLegal.length})`);
-  await page.screenshot({ path: join(AUS, 'modus-volumen.png') });
+  // --- Turmgroesse ---------------------------------------------------------
+  const groessen = await page.evaluate(() =>
+    Array.from(document.getElementById('ps-size').options).map((o) => o.value));
+  pruefe(groessen.includes('8x8x8') && groessen.includes('8x16x8'),
+    `Groessenwahl reicht bis 8x8 Grundflaeche (${groessen.length} Eintraege)`);
 
   await page.evaluate(() => {
-    const el = document.getElementById('ps-mode');
-    el.value = 'FASSADE';
+    const el = document.getElementById('ps-size');
+    el.value = '8x8x8';
     el.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  await page.waitForFunction(() => globalThis.__pfeilspiel.zustand().modus === 'FASSADE', null, { timeout: 30000 });
-  await page.waitForTimeout(700);
-  pruefe(true, 'Rueckwechsel auf FASSADE funktioniert');
+  await page.waitForFunction(() => globalThis.__pfeilspiel.zustand().groesse === '8x8x8', null, { timeout: 60000 });
+  await page.waitForFunction(() => globalThis.__pfeilspiel.beschaeftigt === false, null, { timeout: 30000 });
+  const gross = await page.evaluate(() => globalThis.__pfeilspiel.zustand());
+  pruefe(gross.groesse === '8x8x8' && gross.lebend > 200,
+    `Turm 8x8x8 laedt (${gross.lebend} Steine)`);
+  const grossLegal = await page.evaluate(() => globalThis.__pfeilspiel.legaleZellen());
+  pruefe(grossLegal.length > 0, `8x8x8 hat gueltige Zuege (${grossLegal.length})`);
+  await page.screenshot({ path: join(AUS, 'turm-8x8x8.png') });
+
+  // Der einzige Richtungsmodus ist VOLUMEN; die Schalenvariante ist entfallen.
+  pruefe(gross.modus === 'VOLUMEN', 'Richtungsmodus ist VOLUMEN');
+  pruefe(await page.evaluate(() => document.getElementById('ps-mode') === null),
+    'die Modusauswahl ist aus der Oberflaeche verschwunden');
+
+  await page.evaluate(() => {
+    const el = document.getElementById('ps-size');
+    el.value = '4x6x4';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForFunction(() => globalThis.__pfeilspiel.zustand().groesse === '4x6x4', null, { timeout: 60000 });
+  await page.waitForFunction(() => globalThis.__pfeilspiel.beschaeftigt === false, null, { timeout: 30000 });
+  pruefe(true, 'Rueckwechsel auf einen kleinen Turm funktioniert');
 
   // --- Zielmodus BEFREIUNG -------------------------------------------------
   await page.evaluate(() => {

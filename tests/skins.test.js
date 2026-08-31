@@ -33,7 +33,7 @@ const CSS_COLOR_KEYS = [
 
 const THREE_KEYS = [
   'background', 'hemi', 'key', 'fill', 'envIntensity', 'toneMapping', 'exposure',
-  'shadows', 'cube', 'cubeLow', 'target', 'hover', 'flash', 'ghost', 'coreBox', 'atlas'
+  'shadows', 'cube', 'cubeLow', 'target', 'hover', 'flash', 'ghost', 'atlas'
 ];
 
 const ATLAS_KEYS = [
@@ -160,7 +160,6 @@ test('three-Farben sind ganzzahlige Hexzahlen, Atlasfarben CSS-Farbstrings', () 
       ['key.color', t.key.color], ['fill.color', t.fill.color],
       ['cube.emissive', t.cube.emissive], ['target.emissive', t.target.emissive],
       ['hover.emissive', t.hover.emissive], ['flash.emissive', t.flash.emissive],
-      ['coreBox.color', t.coreBox.color]
     ]) {
       assert.ok(isHexNumber(v), skin.id + ' ' + name + ' ist keine Hexzahl: ' + v);
     }
@@ -186,7 +185,6 @@ test('three-Kennzahlen liegen in ihren Wertebereichen', () => {
     assert.ok(t.cube.roughness >= 0 && t.cube.roughness <= 1, skin.id + ' roughness');
     assert.ok(t.cube.metalness >= 0 && t.cube.metalness <= 1, skin.id + ' metalness');
     assert.ok(t.ghost.opacity > 0 && t.ghost.opacity < 1, skin.id + ' ghost.opacity');
-    assert.ok(t.coreBox.opacity > 0 && t.coreBox.opacity <= 1, skin.id + ' coreBox.opacity');
     // Apple verzichtet bewusst auf transmission (SPEC §7.4).
     assert.equal(t.cubeLow.transmission, 0, skin.id + ' cubeLow.transmission');
   }

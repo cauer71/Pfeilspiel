@@ -42,9 +42,7 @@ export const TEXTE = {
   skinModern: 'Modern',
   skinApple: 'Apple',
   skinArcade: 'Arcade',
-  labelMode: 'Richtungsmodus',
-  modeFassade: 'Fassade',
-  modeVolumen: 'Volumen',
+  labelSize: 'Turmgroesse',
   labelGoal: 'Zielmodus',
   goalAbbau: 'Abbau',
   goalBefreiung: 'Befreiung',
@@ -104,8 +102,7 @@ export const TEXTE = {
   meldungLinkKopiert: 'Link zum Level kopiert.',
 
   // Kurzformen fuer Tabellenzellen
-  kurzFassade: 'Fassade',
-  kurzVolumen: 'Volumen',
+
   kurzAbbau: 'Abbau',
   kurzBefreiung: 'Befreiung',
   trennerModus: ' · ',
@@ -149,8 +146,6 @@ function sterneFuer(moves, stars, par) {
 /** Beschriftung eines Richtungs- oder Zielmodus, gross- und kleingeschrieben. */
 function modusText(wert) {
   const k = String(wert || '').toUpperCase();
-  if (k === 'FASSADE') return TEXTE.kurzFassade;
-  if (k === 'VOLUMEN') return TEXTE.kurzVolumen;
   if (k === 'ABBAU') return TEXTE.kurzAbbau;
   if (k === 'BEFREIUNG') return TEXTE.kurzBefreiung;
   return String(wert || TEXTE.leerwert);
@@ -193,7 +188,7 @@ const FOKUS_SELEKTOR = 'button:not([disabled]), [href], input:not([disabled]), '
  *
  * @param {{
  *   onNew?: function, onUndo?: function, onRestart?: function,
- *   onSkin?: function, onMode?: function, onGoal?: function, onLevel?: function,
+ *   onSkin?: function, onSize?: function, onGoal?: function, onLevel?: function,
  *   onSubmitScore?: function, onShowBoard?: function,
  *   onXray?: function, onSpeed?: function, onMute?: function
  * }} [handlers]
@@ -219,7 +214,7 @@ export function createUI(handlers) {
     settings: id('ps-settings'),
     skin: id('ps-skin'),
     skinChip: id('ps-skin-chip'),
-    mode: id('ps-mode'),
+    size: id('ps-size'),
     goal: id('ps-goal'),
     level: id('ps-level'),
     speed: id('ps-speed'),
@@ -442,7 +437,7 @@ export function createUI(handlers) {
     setSkinChip(E.skin.value);
     rufe('onSkin', E.skin.value);
   });
-  on(E.mode, 'change', () => rufe('onMode', E.mode.value));
+  on(E.size, 'change', () => rufe('onSize', E.size.value));
   on(E.goal, 'change', () => rufe('onGoal', E.goal.value));
 
   on(E.level, 'change', () => {
@@ -625,7 +620,7 @@ export function createUI(handlers) {
   function setControls(werte) {
     const v = werte || {};
     if (E.skin && typeof v.skin === 'string') setSkinChip(v.skin);
-    if (E.mode && typeof v.mode === 'string') E.mode.value = v.mode;
+    if (E.size && typeof v.size === 'string') E.size.value = v.size;
     if (E.goal && typeof v.goal === 'string') E.goal.value = v.goal;
     if (E.level && Number.isFinite(v.level)) E.level.value = String(Math.trunc(v.level));
     if (E.speed && Number.isFinite(v.speed)) E.speed.value = String(v.speed);
@@ -637,6 +632,26 @@ export function createUI(handlers) {
       E.mute.checked = v.muted;
       if (E.muteLabel) E.muteLabel.classList.toggle('is-on', v.muted);
     }
+  }
+
+  /**
+   * Fuellt die Turmgroessen-Auswahl. Die Liste kommt von aussen (levels.GROESSEN), damit
+   * ui.js den Generator nicht kennen muss.
+   * @param {Array<{W:number,H:number,D:number}>} groessen
+   * @param {string} [aktiv] Schluessel "WxHxD" der vorausgewaehlten Groesse
+   */
+  function setSizes(groessen, aktiv) {
+    if (!E.size || !Array.isArray(groessen)) return;
+    E.size.textContent = '';
+    for (const g of groessen) {
+      const wert = g.W + 'x' + g.H + 'x' + g.D;
+      const opt = doc.createElement('option');
+      opt.value = wert;
+      // Grundflaeche x Hoehe, so wie ein Spieler den Turm beschreibt.
+      opt.textContent = g.W + '×' + g.D + ' Grundflaeche, ' + g.H + ' hoch';
+      E.size.appendChild(opt);
+    }
+    if (aktiv) E.size.value = String(aktiv);
   }
 
   // Startwerte des Geruests
@@ -656,6 +671,7 @@ export function createUI(handlers) {
     toast,
     setBusy,
     setSkinChip,
+    setSizes,
     setControls
   };
 }

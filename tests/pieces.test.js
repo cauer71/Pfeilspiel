@@ -15,7 +15,6 @@ import {
 import { generateLevel, verifyLevel, levelSpecFor } from '../public/src/levels.js';
 
 const vol = (W, H, D) => buildBoard({ mode: 'VOLUMEN', W, H, D });
-const fas = (W, H, D) => buildBoard({ mode: 'FASSADE', W, H, D });
 const V = (b, x, y, z) => cellIndexOf(b, `V:${x}:${y}:${z}`);
 
 const PX = 0, NX = 1, PY = 2, NY = 3;
@@ -229,9 +228,9 @@ test('revertMove ist auch fuer 2x1-Steine exakt invers', () => {
 
 // --- Generator -----------------------------------------------------------
 
-test('FASSADE: ein 2x1-Stein liegt nie ueber zwei Waenden', () => {
-  const b = fas(4, 5, 4);
-  const spec = Object.assign(levelSpecFor(15), { mode: 'FASSADE', W: 4, H: 5, D: 4, seed: 99 });
+test('Ein 2x1-Stein des Generators liegt immer vollstaendig im Gitter', () => {
+  const b = vol(4, 5, 4);
+  const spec = Object.assign(levelSpecFor(15), { mode: 'VOLUMEN', W: 4, H: 5, D: 4, seed: 99 });
   const level = generateLevel(spec);
   assert.equal(verifyLevel(level).ok, true);
 
@@ -241,7 +240,6 @@ test('FASSADE: ein 2x1-Stein liegt nie ueber zwei Waenden', () => {
     zwei++;
     const zweite = b.step[cu.cell * 6 + cu.ext];
     assert.notEqual(zweite, OUT, 'die zweite Zelle liegt im Gitter');
-    assert.equal(b.faceOf[cu.cell], b.faceOf[zweite], 'beide Zellen auf derselben Wand');
     assert.ok(zweite > cu.cell, 'der Anker ist die kleinere Zelle');
   }
   assert.ok(zwei > 0, 'das Level enthaelt ueberhaupt 2x1-Steine');

@@ -17,7 +17,7 @@ import {
  * Seed-Anzahl des Harness.
  *
  * SPEC §10.4 nennt 10 000 Seeds fuer den naechtlichen Lauf und 500 fuer `npm test`.
- * Gemessen kostet ein Seed (2 Modi x 2 Zielmodi x 3 Groessen = 12 verifizierte Level,
+ * Gemessen kostet ein Seed (2 Zielmodi x 3 Groessen = 6 verifizierte Level,
  * jedes mit bis zu 12 Versuchen nach SPEC §6.7) rund 330 ms. 150 Seeds ergeben damit
  * 1800 Level in etwa 50 Sekunden und halten den geforderten Rahmen von rund 90 Sekunden
  * auch auf langsamerer Hardware ein. Der vollstaendige Lauf mit 10 000 Seeds bleibt dem
@@ -25,7 +25,6 @@ import {
  */
 const FUZZ_SEEDS = 150;
 
-const MODI = ['FASSADE', 'VOLUMEN'];
 const ZIELE = ['ABBAU', 'BEFREIUNG'];
 const MASSE = [[3, 3, 3], [4, 5, 4], [5, 6, 5]];
 
@@ -43,7 +42,7 @@ test('Fuzz: verifyLevel().ok ist in allen Faellen true', { timeout: 600000 }, ()
   let faelle = 0;
 
   for (let seed = 0; seed < FUZZ_SEEDS; seed++) {
-    for (const mode of MODI) {
+    for (const mode of ['VOLUMEN']) {
       for (const goal of ZIELE) {
         for (const [W, H, D] of MASSE) {
           const level = generateLevel({ seed, attempt: 0, mode, goal, W, H, D });
@@ -76,7 +75,7 @@ test('Fuzz: verifyLevel().ok ist in allen Faellen true', { timeout: 600000 }, ()
     }
   }
 
-  assert.equal(faelle, FUZZ_SEEDS * MODI.length * ZIELE.length * MASSE.length);
+  assert.equal(faelle, FUZZ_SEEDS * ZIELE.length * MASSE.length);
 
   // Der Fuellgrad wird als Kennzahl getrackt und als Untergrenze fixiert (SPEC §10.4).
   //
@@ -112,8 +111,8 @@ function klon(level) {
 }
 
 test('Mutationstest: fuenf Verfaelschungen werden abgelehnt', () => {
-  const abbau = generateForLevelNo(4);          // FASSADE / ABBAU
-  const befreiung = generateForLevelNo(10);     // FASSADE / BEFREIUNG
+  const abbau = generateForLevelNo(4);          // ABBAU, 4x6x4
+  const befreiung = generateForLevelNo(10);     // BEFREIUNG, 4x8x4
   assert.equal(verifyLevel(abbau).ok, true);
   assert.equal(verifyLevel(befreiung).ok, true);
   const board = buildBoard({ mode: abbau.mode, ...abbau.dims });
@@ -124,13 +123,33 @@ test('Mutationstest: fuenf Verfaelschungen werden abgelehnt', () => {
   assert.notEqual(m1.cubes[0].cell, abbau.cubes[0].cell);
   assert.equal(verifyLevel(m1).ok, false, 'verschobener Zellindex');
 
-  // 2. Richtung geaendert
+  // 2. Richtung geaendert.
+  //
+  // Unter RULE_VERSION 3 macht eine beliebige andere Richtung ein ABBAU-Level nicht
+  // unloesbar: ein Austritt raeumt nur Zellen, irgendwann wird also jede Bahn frei. Was
+  // die Verfaelschung sichtbar macht, ist der Zeuge: er nennt eine feste Reihenfolge.
+  // Deshalb wird der Stein des ERSTEN Zeugenzugs auf eine Richtung gedreht, die im
+  // Startzustand verstellt ist — der erste Tipp muss dann als invalid@0 auffallen.
+  const ersteZelle = abbau.witness[0];
+  const start = createState(board, abbau.cubes, abbau.goal);
+  const kErste = abbau.cubes.findIndex((cu) => cu.cell === ersteZelle
+    || (cu.ext !== undefined && board.step[cu.cell * 6 + cu.ext] === ersteZelle));
+  assert.ok(kErste >= 0, 'Testvoraussetzung: der erste Zeugenzug trifft einen Stein');
+  let verstellt = -1;
+  for (const d of validDirs(board, abbau.cubes[kErste].cell)) {
+    if (d === abbau.cubes[kErste].dir) continue;
+    const probe = createState(board, abbau.cubes.map((cu, i) =>
+      (i === kErste ? { ...cu, dir: d } : cu)), abbau.goal);
+    if (resolveMove(board, probe, ersteZelle).kind === 'INVALID') { verstellt = d; break; }
+  }
+  assert.ok(verstellt >= 0, 'Testvoraussetzung: es gibt eine verstellte Richtung');
+  assert.equal(resolveMove(board, start, ersteZelle).kind, 'EXIT',
+    'Vorbedingung: unverfaelscht ist der erste Zeugenzug gueltig');
   const m2 = klon(abbau);
-  const k = Math.floor(m2.cubes.length / 2);
-  const dirs = validDirs(board, m2.cubes[k].cell).filter((d) => d !== m2.cubes[k].dir);
-  assert.ok(dirs.length > 0);
-  m2.cubes[k].dir = dirs[0];
-  assert.equal(verifyLevel(m2).ok, false, 'geaenderte Richtung');
+  m2.cubes[kErste].dir = verstellt;
+  const v2 = verifyLevel(m2);
+  assert.equal(v2.ok, false, 'geaenderte Richtung');
+  assert.equal(v2.reason, 'invalid@0');
 
   // 3. witness-Eintrag fehlt.
   //

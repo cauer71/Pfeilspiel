@@ -81,10 +81,17 @@ function standardGewichte() {
 }
 
 /** Standardbaender (SPEC §6.11). */
+/**
+ * Baender der Versuchsschleife (SPEC §6.7).
+ *
+ * Unter Regelversion 3 traegt nur `mobility` Aussagekraft: der Anteil der Steine, die im
+ * Startzustand ziehen koennen. Nahe 1 ist das Level langweilig (alles sofort antippbar),
+ * sehr niedrig wird es zur Sucharbeit. `naivePerPar` ist in ABBAU wegen der Monotonie
+ * (§1.3) stets 1.0 und damit kein Kriterium; es wird nur noch als Kennzahl gefuehrt.
+ */
 function standardBaender() {
   return {
-    naivePerPar: [0.00, 1.00],
-    mobility: [0.00, 1.00]
+    mobility: [0.10, 0.60]
   };
 }
 
@@ -97,16 +104,34 @@ function standardBaender() {
  * (Modus, Ziel, Masse) und nicht nach Levelnummer.
  */
 const KURVE = Object.freeze([
-  { mode: 'FASSADE', goal: 'ABBAU', W: 3, H: 4, D: 3, density: 0.95, q: 0, domino: 0, stars: [1.15, 1.35] },
-  { mode: 'FASSADE', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.92, q: 0, domino: 0.18, stars: [1.15, 1.30] },
-  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.95, q: 0.55, domino: 0.30, stars: [1.15, 1.30] },
-  { mode: 'FASSADE', goal: 'ABBAU', W: 5, H: 10, D: 5, density: 0.92, q: 0, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 3, H: 5, D: 3, density: 0.85, q: 0.60, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.85, q: 0, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.90, q: 0.80, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'ABBAU', W: 5, H: 8, D: 5, density: 0.90, q: 0, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'FASSADE', goal: 'BEFREIUNG', W: 5, H: 12, D: 5, density: 0.90, q: 0.70, domino: 0.30, stars: [1.12, 1.25] },
-  { mode: 'VOLUMEN', goal: 'BEFREIUNG', W: 5, H: 8, D: 5, density: 0.90, q: 0.70, domino: 0.30, stars: [1.12, 1.25] }
+  { goal: 'ABBAU', W: 3, H: 4, D: 3, density: 0.95, q: 0, domino: 0, stars: [1.15, 1.35] },
+  { goal: 'ABBAU', W: 4, H: 6, D: 4, density: 0.92, q: 0, domino: 0.18, stars: [1.15, 1.30] },
+  { goal: 'BEFREIUNG', W: 4, H: 8, D: 4, density: 0.92, q: 0.55, domino: 0.30, stars: [1.15, 1.30] },
+  { goal: 'ABBAU', W: 5, H: 8, D: 5, density: 0.90, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { goal: 'BEFREIUNG', W: 5, H: 10, D: 5, density: 0.90, q: 0.60, domino: 0.30, stars: [1.12, 1.25] },
+  { goal: 'ABBAU', W: 6, H: 10, D: 6, density: 0.88, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { goal: 'BEFREIUNG', W: 6, H: 12, D: 6, density: 0.88, q: 0.70, domino: 0.30, stars: [1.12, 1.25] },
+  { goal: 'ABBAU', W: 7, H: 12, D: 7, density: 0.86, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { goal: 'ABBAU', W: 8, H: 8, D: 8, density: 0.88, q: 0, domino: 0.30, stars: [1.12, 1.25] },
+  { goal: 'BEFREIUNG', W: 8, H: 12, D: 8, density: 0.86, q: 0.70, domino: 0.30, stars: [1.12, 1.25] },
+  { goal: 'ABBAU', W: 8, H: 16, D: 8, density: 0.85, q: 0, domino: 0.30, stars: [1.10, 1.22] },
+  { goal: 'BEFREIUNG', W: 8, H: 16, D: 8, density: 0.85, q: 0.70, domino: 0.30, stars: [1.10, 1.22] }
+]);
+
+/**
+ * Die im Spiel waehlbaren Turmgroessen (SPEC §6.11). Der groesste Turm hat 1024 Zellen und
+ * bleibt damit unter MAX_CUBES; er erzeugt in unter 100 ms.
+ */
+export const GROESSEN = Object.freeze([
+  Object.freeze({ W: 3, H: 4, D: 3 }),
+  Object.freeze({ W: 4, H: 6, D: 4 }),
+  Object.freeze({ W: 5, H: 8, D: 5 }),
+  Object.freeze({ W: 6, H: 10, D: 6 }),
+  Object.freeze({ W: 6, H: 12, D: 6 }),
+  Object.freeze({ W: 7, H: 12, D: 7 }),
+  Object.freeze({ W: 8, H: 8, D: 8 }),
+  Object.freeze({ W: 8, H: 12, D: 8 }),
+  Object.freeze({ W: 8, H: 16, D: 8 })
 ]);
 
 /** Freies Spiel und unbekannte Masse: Parameter der Stufe 8. */
@@ -116,7 +141,7 @@ const KURVE_STANDARD = Object.freeze({ density: 0.90, q: 0.70, domino: 0.30, sta
 function kurvenParameter(mode, goal, W, H, D) {
   for (let i = 0; i < KURVE.length; i++) {
     const k = KURVE[i];
-    if (k.mode === mode && k.goal === goal && k.W === W && k.H === H && k.D === D) return k;
+    if (k.goal === goal && k.W === W && k.H === H && k.D === D) return k;
   }
   return KURVE_STANDARD;
 }
@@ -147,7 +172,7 @@ function specVon(mode, goal, W, H, D, seed, attempt) {
 /** Ergaenzt eine unvollstaendige Spec um alle Pflichtfelder. */
 function normSpec(spec) {
   if (!spec || typeof spec !== 'object') throw new TypeError('LevelSpec fehlt');
-  const mode = spec.mode === 'VOLUMEN' ? 'VOLUMEN' : 'FASSADE';
+  const mode = 'VOLUMEN';
   const goal = spec.goal === 'BEFREIUNG' ? 'BEFREIUNG' : 'ABBAU';
   const W = spec.W | 0, H = spec.H | 0, D = spec.D | 0;
   const basis = specVon(mode, goal, W, H, D, spec.seed >>> 0, spec.attempt | 0);
@@ -166,28 +191,17 @@ function normSpec(spec) {
  */
 export function levelSpecFor(n) {
   const stufe = Number.isFinite(n) ? Math.max(1, Math.floor(n)) : 1;
-  let mode, goal, W, H, D;
-  if (stufe <= 3) { mode = 'FASSADE'; goal = 'ABBAU'; W = 3; H = 4; D = 3; }
-  else if (stufe <= 8) { mode = 'FASSADE'; goal = 'ABBAU'; W = 4; H = 6; D = 4; }
-  else if (stufe <= 12) { mode = 'FASSADE'; goal = 'BEFREIUNG'; W = 4; H = 8; D = 4; }
-  else if (stufe <= 18) { mode = 'FASSADE'; goal = 'ABBAU'; W = 5; H = 10; D = 5; }
-  else if (stufe <= 22) { mode = 'VOLUMEN'; goal = 'BEFREIUNG'; W = 3; H = 5; D = 3; }
-  else if (stufe <= 30) { mode = 'VOLUMEN'; goal = 'ABBAU'; W = 4; H = 6; D = 4; }
-  else if (stufe <= 40) { mode = 'VOLUMEN'; goal = 'BEFREIUNG'; W = 4; H = 8; D = 4; }
-  else {
-    // Stufe 8: abwechselnd Modus und Zielmodus. Die Grundflaeche waechst nur langsam,
-    // die Hoehe traegt den Zuwachs - so bleibt die Silhouette ein Turm und die Zugzahl
-    // waechst linear statt kubisch (SPEC §6.11).
-    const k = stufe - 41;
-    mode = (k % 2 === 0) ? 'VOLUMEN' : 'FASSADE';
-    goal = (Math.floor(k / 2) % 2 === 0) ? 'ABBAU' : 'BEFREIUNG';
-    W = Math.min(6, 5 + Math.floor(k / 30));
-    D = W;
-    H = mode === 'VOLUMEN'
-      ? Math.min(10, 6 + Math.floor(k / 8))
-      : Math.min(16, 10 + Math.floor(k / 6));
+  // Stufenbaender der Kurve; die letzte Stufe wiederholt sich mit wechselndem Zielmodus.
+  const baender = [
+    [3, 0], [8, 1], [14, 2], [20, 3], [28, 4], [36, 5], [46, 6], [58, 7], [70, 8], [84, 9], [100, 10]
+  ];
+  let k = KURVE.length - 2;
+  for (const [bis, index] of baender) {
+    if (stufe <= bis) { k = index; break; }
   }
-  return specVon(mode, goal, W, H, D, hash32(stufe), 0);
+  if (stufe > 100) k = (stufe % 2 === 0) ? 10 : 11;
+  const e = KURVE[k];
+  return specVon('VOLUMEN', e.goal, e.W, e.H, e.D, hash32(stufe), 0);
 }
 
 // --- Levelcode und URL-Hash (SPEC §4.2) ---------------------------------
@@ -195,7 +209,7 @@ export function levelSpecFor(n) {
 const CODE_RE = /^([FV])-([AB])-(\d{1,2})x(\d{1,2})x(\d{1,2})-(\d{1,2})-([0-9A-F]{8})$/;
 
 export function encodeLevelCode(spec) {
-  const m = spec.mode === 'VOLUMEN' ? 'V' : 'F';
+  const m = 'V';
   const g = spec.goal === 'BEFREIUNG' ? 'B' : 'A';
   const seed = (spec.seed >>> 0).toString(16).toUpperCase().padStart(8, '0');
   return m + '-' + g + '-' + spec.W + 'x' + spec.H + 'x' + spec.D + '-' + (spec.attempt | 0) + '-' + seed;
@@ -208,8 +222,9 @@ export function parseLevelCode(code) {
   if (!m) throw new Error('Levelcode: Formatfehler: ' + code);
   const attempt = parseInt(m[6], 10);
   if (attempt < 0 || attempt > 11) throw new Error('Levelcode: Versuchsindex ausserhalb 0..11');
+  if (m[1] !== 'V') throw new Error('Levelcode: der Modus FASSADE ist entfallen: ' + code);
   const W = parseInt(m[3], 10), H = parseInt(m[4], 10), D = parseInt(m[5], 10);
-  const mode = m[1] === 'V' ? 'VOLUMEN' : 'FASSADE';
+  const mode = 'VOLUMEN';
   const goal = m[2] === 'B' ? 'BEFREIUNG' : 'ABBAU';
   buildBoard({ mode, W, H, D });   // Masse pruefen, wirft RangeError
   return specVon(mode, goal, W, H, D, parseInt(m[7], 16) >>> 0, attempt);
@@ -242,7 +257,7 @@ export function parseHash(hash) {
   if (!feld.s || !feld.m || !feld.g || !feld.d || feld.a === undefined) return null;
   if (feld.r !== undefined && +feld.r !== RULE_VERSION) return null;
   if (feld.gv !== undefined && +feld.gv !== GEN_VERSION) return null;
-  if (feld.m !== 'FASSADE' && feld.m !== 'VOLUMEN') return null;
+  if (feld.m !== 'VOLUMEN') return null;
   if (feld.g !== 'ABBAU' && feld.g !== 'BEFREIUNG') return null;
   if (!/^[0-9a-fA-F]{1,8}$/.test(feld.s)) return null;
   if (!/^\d{1,2}$/.test(feld.a)) return null;
@@ -568,8 +583,16 @@ function tryGenerate(board, spec, rng) {
 
 // --- Kennzahlen (SPEC §3.5, §6.10) --------------------------------------
 
-/** Playouts je Erzeugung; klein gehalten, weil generateLevel im Client blockiert. */
-const GEN_PLAYOUTS = 4;
+/**
+ * Playouts im Erzeugungspfad: keine.
+ *
+ * `solveGreedy` ruft je Zug `legalCells` auf, das seinerseits jede Zelle mit `resolveMove`
+ * prueft — ein Playout kostet damit O(Zuege · Zellen · Bahnlaenge) und dominierte bei
+ * grossen Tuermen die gesamte Erzeugung. Da `naivePerPar` kein Abnahmekriterium mehr ist
+ * (siehe standardBaender), wird es erst von `measureLevel` nachgetragen, und das laeuft
+ * nach dem ersten gezeichneten Bild in requestIdleCallback (SPEC §4.7.8).
+ */
+const GEN_PLAYOUTS = 0;
 
 function kennzahlen(board, level, runs, rng) {
   const start = createState(board, level.cubes, level.goal);
@@ -585,10 +608,14 @@ function kennzahlen(board, level, runs, rng) {
   // der sich festfaehrt, bleibt unter par. naivePerPar ist damit ein Mass fuer die
   // Schwierigkeit: nahe 1 heisst "loest sich fast von selbst", niedrig heisst
   // "wer nicht nachdenkt, sitzt fest".
-  const laeufe = Math.max(1, runs | 0);
-  let summe = 0;
-  for (let r = 0; r < laeufe; r++) summe += solveGreedy(board, start, rng).moves;
-  const naivePerPar = level.par > 0 ? (summe / laeufe) / level.par : 0;
+  // runs === 0 heisst: nicht messen. Der Wert wird spaeter von measureLevel nachgetragen.
+  const laeufe = Math.max(0, runs | 0);
+  let naivePerPar = 0;
+  if (laeufe > 0) {
+    let summe = 0;
+    for (let r = 0; r < laeufe; r++) summe += solveGreedy(board, start, rng).moves;
+    naivePerPar = level.par > 0 ? (summe / laeufe) / level.par : 0;
+  }
 
   return {
     density: runde(dichte, 4),
@@ -607,13 +634,16 @@ export function measureLevel(board, level, runs = 200) {
 
 /**
  * Unabhaengiger Vorwaerts-Solver (SPEC §6.10). Kein Bestandteil der Garantie.
- * Politik je Lauf: zufall / gierig (bevorzugt EXIT) / weit (bevorzugt grosses jumps).
+ * Politik je Lauf: zufall / nah (kuerzeste Bahn) / weit (laengste Bahn). Unter
+ * RULE_VERSION 3 ist jeder gueltige Zug ein Austritt, also unterscheidet sich eine
+ * Politik nur noch darin, WELCHEN austrittsfaehigen Stein sie zuerst nimmt; die Laenge
+ * der Bahn (`path.length`) ist das einzige verbleibende Unterscheidungsmerkmal.
  * @returns {{solved:boolean, moves:number, rest:number}}
  */
 export function solveGreedy(board, state, rng, maxSteps) {
   const s = cloneState(state);
   const grenze = Number.isFinite(maxSteps) ? maxSteps : 40 * board.C + 500;
-  const politik = Math.min(2, Math.floor(rng() * 3));   // 0 zufall, 1 gierig, 2 weit
+  const politik = Math.min(2, Math.floor(rng() * 3));   // 0 zufall, 1 nah, 2 weit
   let moves = 0;
   while (moves < grenze && !isSolved(s)) {
     const zellen = legalCells(board, s);
@@ -625,9 +655,8 @@ export function solveGreedy(board, state, rng, maxSteps) {
       let bestW = -Infinity;
       for (let i = 0; i < zellen.length; i++) {
         const m = resolveMove(board, s, zellen[i]);
-        const w = politik === 1
-          ? (m.kind === 'EXIT' ? 1000 : 0) + m.jumps
-          : m.jumps * 10 + (m.kind === 'EXIT' ? 5 : 0);
+        const laenge = m.path.length;
+        const w = politik === 1 ? -laenge : laenge;
         if (w > bestW) { bestW = w; wahl = zellen[i]; }
       }
     }
@@ -709,10 +738,7 @@ function imBand(x, band) {
 }
 
 function inBands(m, b) {
-  return imBand(m.naivePerPar, b.naivePerPar)
-    && imBand(m.chainShare, b.chainShare)
-    && imBand(m.mobility, b.mobility)
-    && imBand(m.trivialExit, b.trivialExit);
+  return imBand(m.mobility, b.mobility);
 }
 
 function bandAbstand(x, band) {
@@ -723,10 +749,7 @@ function bandAbstand(x, band) {
 }
 
 function bandStrafe(m, b) {
-  return bandAbstand(m.naivePerPar, b.naivePerPar)
-    + bandAbstand(m.chainShare, b.chainShare)
-    + bandAbstand(m.mobility, b.mobility)
-    + bandAbstand(m.trivialExit, b.trivialExit);
+  return bandAbstand(m.mobility, b.mobility);
 }
 
 // --- Erzeugung (SPEC §6.7) ----------------------------------------------
@@ -788,7 +811,7 @@ function pruefeStruktur(level) {
   if (level.v !== 1) return { ok: false, reason: 'v' };
   if (level.ruleVersion !== RULE_VERSION) return { ok: false, reason: 'ruleVersion' };
   if (level.genVersion !== GEN_VERSION) return { ok: false, reason: 'genVersion' };
-  if (level.mode !== 'FASSADE' && level.mode !== 'VOLUMEN') return { ok: false, reason: 'mode' };
+  if (level.mode !== 'VOLUMEN') return { ok: false, reason: 'mode' };
   if (level.goal !== 'ABBAU' && level.goal !== 'BEFREIUNG') return { ok: false, reason: 'goal' };
 
   const dims = level.dims;

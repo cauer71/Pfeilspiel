@@ -159,7 +159,7 @@ function alleDims() {
 
 test('3. fillByDepth fuellt das leere Brett zu 100 Prozent und raeumt es restlos ab', () => {
   let geprueft = 0;
-  for (const mode of ['FASSADE', 'VOLUMEN']) {
+  for (const mode of ['VOLUMEN']) {
     for (const { W, H, D } of alleDims()) {
       const board = buildBoard({ mode, W, H, D });
       const state = emptyState(board, board.C, 'ABBAU');
@@ -186,7 +186,7 @@ test('3. fillByDepth fuellt das leere Brett zu 100 Prozent und raeumt es restlos
       geprueft++;
     }
   }
-  assert.equal(geprueft, 504);
+  assert.equal(geprueft, 252);
 });
 
 // --- 4. Kennzahlen ueber viele Level (SPEC §10.3.4) ---------------------
@@ -195,7 +195,7 @@ test('3. fillByDepth fuellt das leere Brett zu 100 Prozent und raeumt es restlos
 const LEVEL_JE_KOMBINATION = 100;
 
 test('4. Kennzahlen: Dichte, restloser Abbau, Befreiungspraefix', () => {
-  for (const mode of ['FASSADE', 'VOLUMEN']) {
+  for (const mode of ['VOLUMEN']) {
     for (const goal of ['ABBAU', 'BEFREIUNG']) {
       for (let i = 0; i < LEVEL_JE_KOMBINATION; i++) {
         const spec = {
@@ -290,7 +290,7 @@ test('6. parseLevelCode(encodeLevelCode(spec)) ist die Identitaet', () => {
     for (const attempt of [0, 3, 11]) {
       const spec = Object.assign(levelSpecFor(n), { attempt });
       const code = encodeLevelCode(spec);
-      assert.match(code, /^[FV]-[AB]-\d+x\d+x\d+-\d{1,2}-[0-9A-F]{8}$/);
+      assert.match(code, /^V-[AB]-\d+x\d+x\d+-\d{1,2}-[0-9A-F]{8}$/);
       assert.ok(code.includes('-' + attempt + '-'), 'attempt steht im Code');
       const zurueck = parseLevelCode(code);
       for (const f of felder) assert.deepEqual(zurueck[f], spec[f], f + ' in ' + code);
@@ -305,15 +305,18 @@ test('6. parseLevelCode(encodeLevelCode(spec)) ist die Identitaet', () => {
       for (const f of felder) assert.deepEqual(ausHash[f], spec[f], f + ' in ' + hash);
     }
   }
-  assert.equal(encodeLevelCode({ mode: 'FASSADE', goal: 'ABBAU', W: 4, H: 5, D: 4, attempt: 0, seed: 0x0008FA3C }),
-    'F-A-4x5x4-0-0008FA3C');
-  assert.equal(encodeHash({ mode: 'FASSADE', goal: 'ABBAU', W: 5, H: 7, D: 5, attempt: 0, seed: 0x8fa3c }),
-    '#s=8fa3c&m=FASSADE&g=ABBAU&d=5x7x5&a=0&r=3&gv=3');
+  assert.equal(encodeLevelCode({ mode: 'VOLUMEN', goal: 'ABBAU', W: 4, H: 5, D: 4, attempt: 0, seed: 0x0008FA3C }),
+    'V-A-4x5x4-0-0008FA3C');
+  assert.equal(encodeHash({ mode: 'VOLUMEN', goal: 'ABBAU', W: 5, H: 7, D: 5, attempt: 0, seed: 0x8fa3c }),
+    '#s=8fa3c&m=VOLUMEN&g=ABBAU&d=5x7x5&a=0&r=3&gv=3');
 
   assert.throws(() => parseLevelCode('X-A-4x5x4-0-0008FA3C'), Error);
-  assert.throws(() => parseLevelCode('F-A-4x5x4-12-0008FA3C'), Error);
-  assert.throws(() => parseLevelCode('F-A-2x5x4-0-0008FA3C'), RangeError);
-  assert.equal(parseHash('#s=1&m=FASSADE&g=ABBAU&d=4x5x4&a=0&r=99&gv=1'), null);
+  assert.throws(() => parseLevelCode('V-A-4x5x4-12-0008FA3C'), Error);
+  assert.throws(() => parseLevelCode('V-A-2x5x4-0-0008FA3C'), RangeError);
+  // Codes der entfallenen Schalenvariante werden abgewiesen, nicht als VOLUMEN gedeutet.
+  assert.throws(() => parseLevelCode('F-A-4x5x4-0-0008FA3C'), Error);
+  assert.equal(parseHash('#s=1&m=FASSADE&g=ABBAU&d=4x5x4&a=0&r=3&gv=3'), null);
+  assert.equal(parseHash('#s=1&m=VOLUMEN&g=ABBAU&d=4x5x4&a=0&r=99&gv=1'), null);
   assert.equal(parseHash('unsinn'), null);
 });
 
@@ -359,8 +362,8 @@ test('8. levelSpecFor haelt MAX_CUBES und die Groessendeckel fuer n in [1,500]',
   for (let n = 1; n <= 500; n++) {
     const spec = levelSpecFor(n);
     assert.ok(spec.W >= 3 && spec.D >= 3 && spec.H >= 2);
-    assert.ok(spec.W <= 6 && spec.D <= 6, 'Grundflaechendeckel 6 bei n=' + n);
-    assert.ok(spec.H <= (spec.mode === 'VOLUMEN' ? 10 : 16), 'Hoehendeckel bei n=' + n);
+    assert.ok(spec.W <= 8 && spec.D <= 8, 'Grundflaechendeckel 8 bei n=' + n);
+    assert.ok(spec.H <= 16, 'Hoehendeckel bei n=' + n);
     const board = buildBoard({ mode: spec.mode, W: spec.W, H: spec.H, D: spec.D });
     assert.ok(board.C <= MAX_CUBES);
     assert.ok(Math.round(spec.density * board.C) <= MAX_CUBES);

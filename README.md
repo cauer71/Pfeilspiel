@@ -34,16 +34,7 @@ exakt invers und beliebig tief.
 Weil ein Austritt nur Felder freiräumt und nie eines belegt, kann ein Stein, der einmal ziehen
 konnte, das immer noch. Ein lösbares Level lässt sich also nicht durch eine ungeschickte
 Reihenfolge verderben. Die Schwierigkeit liegt im **Finden**: einem Pfeil ist im dichten Turm
-nicht anzusehen, ob seine Bahn frei ist — erst recht nicht im Modus *Volumen*, wo Pfeile ins
-Innere zeigen.
-
-### Richtungsmodi
-
-* **Fassade** — der Turm ist eine hohle Schale aus vier Seitenwänden und einem Deckel.
-  Der Pfeil zeigt in der Ebene seiner Wand (vier Richtungen), am Wandrand fällt der Würfel
-  heraus. Ein Würfel einer Nachbarwand existiert für die Regel nicht: er blockiert nicht
-  und wird nicht übersprungen.
-* **Volumen** — massiver Quader, sechs echte Raumrichtungen. Pfeile zeigen auch ins Innere.
+nicht anzusehen, ob seine Bahn frei ist, und im massiven Turm zeigen Pfeile auch ins Innere.
 
 ### Zielmodi
 
@@ -61,8 +52,14 @@ im Test, sondern bei jeder Levelerzeugung im Spiel.
 Die Garantie gilt ab dem Startzustand. Wer sich festfährt, bekommt ein Overlay mit
 *Rückgängig* und *Neustart* — automatisch zurückgesetzt wird nie.
 
-Die Levelkurve wächst vor allem in der **Höhe** (3×4×3 bis 6×16×6): Das trifft die Silhouette
-eines Turms und lässt die Zugzahl linear statt kubisch wachsen.
+Die Levelkurve wächst vor allem in der **Höhe** (3×4×3 bis 8×16×8): Das trifft die Silhouette
+eines Turms, und weil ein Zug genau einen Stein entfernt, wächst die Zugzahl in der Höhe linear
+statt in der Grundfläche quadratisch.
+
+Im freien Spiel ist die Turmgröße wählbar — von 3×3 Grundfläche mit 4 Etagen bis 8×8 mit
+16 Etagen (`3x4x3`, `4x6x4`, `5x8x5`, `6x10x6`, `6x12x6`, `7x12x7`, `8x8x8`, `8x12x8`,
+`8x16x8`), Zielmodus getrennt einstellbar. Auch der größte Turm mit rund 870 Steinen wird vor
+der Ausgabe vollständig verifiziert; das kostet etwa 100 ms.
 
 ---
 
@@ -91,14 +88,14 @@ npm run serve        # http://localhost:8787
 ## Tests
 
 ```bash
-npm test             # 226 Node-Tests: Geometrie, Zugregel, zweizellige Steine,
+npm test             # 223 Node-Tests: Geometrie, Zugregel, zweizellige Steine,
                      # Generator und Lösbarkeitsgarantie, Sitzung, Zeigereingabe,
                      # Overlays, Skins samt Kontrastproben, Worker-Validierung und
                      # -Anfragebearbeitung, API-Klient, Einzeldatei-Frischeprüfung
-npm run e2e          # 31 Prüfungen im echten Browser (Playwright + Chromium)
+npm run e2e          # Prüfungen im echten Browser (Playwright + Chromium)
 ```
 
-Der E2E-Lauf legt Bildschirmfotos aller drei Skins und beider Modi unter `test-results/` ab.
+Der E2E-Lauf legt Bildschirmfotos aller drei Skins und beider Zielmodi unter `test-results/` ab.
 
 ## Einzeldatei-Fassung
 
@@ -124,13 +121,10 @@ kommt als Static Asset aus `public/`. Die Bestenliste liegt in D1.
   `name_blocklist` samt Indizes stehen.
 * `wrangler.jsonc` mit Asset-Binding, D1-Binding und `run_worker_first` für `/api/*`.
 
-**Noch zu tun (einmalig, im Dashboard):**
-
-1. **Workers → Create → Connect Git** und dieses Repository verbinden. Build-Command bleibt
-   leer, Deploy-Command `npx wrangler deploy`. Danach deployt Cloudflare bei jedem Push.
-2. **Settings → Variables and Secrets:** Secret `IP_SALT` anlegen (beliebige lange
-   Zufallszeichenkette). Der Worker speichert IP-Adressen ausschließlich als gesalzenen
-   Hash — ohne dieses Secret lehnt er Einträge ab.
+* Git-Integration (**Workers → Create → Connect Git**, Build-Command leer, Deploy-Command
+  `npx wrangler deploy`): Cloudflare deployt bei jedem Push.
+* Secret `IP_SALT` ist gesetzt. Der Worker speichert IP-Adressen ausschließlich als gesalzenen
+  Hash; ohne dieses Secret lehnt er Einträge ab.
 
 Alternativ mit lokalem Wrangler und eigenem API-Token:
 

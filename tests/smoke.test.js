@@ -52,9 +52,9 @@ function exporte(name) {
 const ZUGESAGT = {
   game: [
     'OUT', 'EMPTY', 'CELL', 'CUBE_EDGE', 'MAX_CUBES', 'RULE_VERSION',
-    'DIR6', 'DIR6_NAMES', 'FDIR4_NAMES', 'FACES',
+    'DIR6', 'DIR6_NAMES',
     'buildBoard', 'cellKey', 'cellIndexOf', 'latticeOf', 'worldPosOf', 'dirWorldOf',
-    'outNormalOf', 'validDirs', 'depthOf', 'minDepthOf', 'bestExitDirs',
+    'validDirs', 'depthOf', 'minDepthOf', 'bestExitDirs',
     'createState', 'emptyState', 'cloneState', 'addCube', 'dropCube', 'isFree',
     'resolveMove', 'applyMove', 'revertMove', 'legalCells', 'mobility', 'hasAnyMove',
     'isSolved', 'createSession', 'tap', 'undo', 'restart', 'tickClock', 'toRunLog'
@@ -140,14 +140,14 @@ test('§4.7/§0.5: main.js ruft boot() selbst auf und nutzt den Pflichtpfad', ()
   assert.ok(/requestIdleCallback/.test(text), 'main.js misst nicht im Leerlauf');
 });
 
-// --- 3. Die Kette bis zum Sieg, beide Modi, beide Zielmodi -------------
+// --- 3. Die Kette bis zum Sieg, beide Zielmodi ------------------------
 
-/** Levelnummern der Kurve, die genau eine der vier Kombinationen liefern (§6.11). */
+/** Levelnummern der Kurve, die je einen Zielmodus in kleiner und grosser Form liefern (§6.11). */
 const FAELLE = [
-  { n: 1, mode: 'FASSADE', goal: 'ABBAU' },
-  { n: 9, mode: 'FASSADE', goal: 'BEFREIUNG' },
-  { n: 23, mode: 'VOLUMEN', goal: 'ABBAU' },
-  { n: 19, mode: 'VOLUMEN', goal: 'BEFREIUNG' }
+  { n: 1, mode: 'VOLUMEN', goal: 'ABBAU' },
+  { n: 9, mode: 'VOLUMEN', goal: 'BEFREIUNG' },
+  { n: 19, mode: 'VOLUMEN', goal: 'ABBAU' },
+  { n: 23, mode: 'VOLUMEN', goal: 'BEFREIUNG' }
 ];
 
 for (const fall of FAELLE) {

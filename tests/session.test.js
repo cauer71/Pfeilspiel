@@ -37,8 +37,8 @@ function leereZelle(board, state) {
   return -1;
 }
 
-const ABBAU_LEVEL = generateForLevelNo(4);        // FASSADE / ABBAU
-const BEFREI_LEVEL = generateForLevelNo(10);      // FASSADE / BEFREIUNG
+const ABBAU_LEVEL = generateForLevelNo(4);        // ABBAU, 4x6x4
+const BEFREI_LEVEL = generateForLevelNo(10);      // BEFREIUNG, 4x8x4
 const VOL_LEVEL = generateForLevelNo(25);         // VOLUMEN / ABBAU
 
 test('Vorbedingung: die benutzten Level sind verifiziert', () => {
@@ -257,7 +257,7 @@ test('7. toRunLog uebernimmt Zugzahl, Undos, Uhr und Tippfolge', () => {
   assert.equal(log.seed, level.seed);
   assert.equal(log.genVersion, level.genVersion);
   assert.equal(log.ruleVersion, level.ruleVersion);
-  assert.equal(log.dirMode, 'fassade');
+  assert.equal(log.dirMode, 'volumen');
   assert.equal(log.goalMode, 'abbau');
   assert.deepEqual(log.size, { x: level.dims.W, y: level.dims.H, z: level.dims.D });
   assert.equal(log.cubes, level.cubes.length);

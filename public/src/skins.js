@@ -61,7 +61,6 @@ export const SKINS = {
       // 4,5:1 abgedunkelt sein kann; der Blitz darf davon nicht stumpf werden.
       flash: { emissive: 0xE2564A, emissiveIntensity: 0.90 },
       ghost: { opacity: 0.16 },
-      coreBox: { color: 0x0E1116, opacity: 1.0 },
       atlas: {
         tile: 256, gutter: 16, style: 'solidTriangle',
         body: '#F2F1EE', bodyTarget: '#4ADE80', glyph: '#12151A', glyphAlpha: 1,
@@ -157,7 +156,6 @@ export const SKINS = {
       hover: { emissive: 0x0A84FF, emissiveIntensity: 0.12 },
       flash: { emissive: 0xFF3B30, emissiveIntensity: 0.90 },
       ghost: { opacity: 0.14 },
-      coreBox: { color: 0xD9E1EB, opacity: 1.0 },
       atlas: {
         tile: 256, gutter: 16, style: 'softChevron',
         body: '#FFFFFF', bodyTarget: '#BFF7CE', glyph: '#1C1C1E', glyphAlpha: 0.92,
@@ -243,7 +241,6 @@ export const SKINS = {
       hover: { emissive: 0xFF2E88, emissiveIntensity: 0.50 },
       flash: { emissive: 0xFF3131, emissiveIntensity: 0.90 },
       ghost: { opacity: 0.18 },
-      coreBox: { color: 0x05070A, opacity: 1.0 },
       atlas: {
         tile: 128, gutter: 16, style: 'pixelArrow',
         body: '#EDEDF5', bodyTarget: '#39FF14', glyph: '#12021F', glyphAlpha: 1,

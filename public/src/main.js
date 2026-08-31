@@ -10,7 +10,7 @@ import {
   resolveMove, hasAnyMove, legalCells
 } from './game.js';
 import {
-  levelSpecFor, generateLevel, parseHash, encodeHash, measureLevel
+  levelSpecFor, generateLevel, parseHash, encodeHash, measureLevel, GROESSEN
 } from './levels.js';
 import {
   createRenderer, createScene, createCamera, createControls, fitCamera,
@@ -190,8 +190,8 @@ export async function boot() {
     onUndo: () => zuruecknehmen(),
     onRestart: () => neustart(),
     onSkin: (id) => skinWechseln(id),
-    onMode: (m) => modusWechseln(m, null),
-    onGoal: (g) => modusWechseln(null, g),
+    onSize: (g) => groesseWechseln(g),
+    onGoal: (g) => zielWechseln(g),
     onLevel: (n) => levelWaehlen(n),
     onSpeed: (f) => { tempo = f; schreib(SPEICHER.tempo, f); tempoAnwenden(); },
     onXray: (an) => {
@@ -210,8 +210,9 @@ export async function boot() {
     onSubmitScore: (name) => eintragSenden(name)
   });
 
+  ui.setSizes(GROESSEN, spec.W + 'x' + spec.H + 'x' + spec.D);
   ui.setControls({
-    skin: skinId, mode: spec.mode, goal: spec.goal, level: levelNo,
+    skin: skinId, size: spec.W + 'x' + spec.H + 'x' + spec.D, goal: spec.goal, level: levelNo,
     speed: tempo, xray: roentgen, muted: stumm
   });
 
@@ -420,7 +421,7 @@ export async function boot() {
     ui.setUndos(0);
     ui.setTimer(0);
     ui.setPar(level.par);
-    ui.setControls({ mode: spec.mode, goal: spec.goal, level: levelNo });
+    ui.setControls({ size: spec.W + 'x' + spec.H + 'x' + spec.D, goal: spec.goal, level: levelNo });
     hashSchreiben();
     ui.setBusy(false);
     laedt = false;
@@ -448,11 +449,22 @@ export async function boot() {
     ladeLevel(levelSpecFor(levelNo), TEXTE.meldungNeuesLevel);
   }
 
-  function modusWechseln(mode, goal) {
+  /**
+   * Freies Spiel in der gewaehlten Turmgroesse. Die Levelkurve wird dabei verlassen: der
+   * Spieler hat die Masse selbst gesetzt, eine Levelnummer waere dann irrefuehrend.
+   */
+  function groesseWechseln(text) {
+    const teile = String(text || '').split('x').map((t) => parseInt(t, 10));
+    if (teile.length !== 3 || teile.some((n) => !Number.isFinite(n))) return;
     aufKurve = false;
-    const m = mode || spec.mode;
-    const g = goal || spec.goal;
-    ladeLevel(basisSpec(m, g, spec.W, spec.H, spec.D, neuerSeed()), TEXTE.meldungNeuesLevel);
+    ladeLevel(basisSpec('VOLUMEN', spec.goal, teile[0], teile[1], teile[2], neuerSeed()),
+      TEXTE.meldungNeuesLevel);
+  }
+
+  function zielWechseln(goal) {
+    aufKurve = false;
+    ladeLevel(basisSpec('VOLUMEN', goal || spec.goal, spec.W, spec.H, spec.D, neuerSeed()),
+      TEXTE.meldungNeuesLevel);
   }
 
   function skinWechseln(id) {
@@ -570,6 +582,7 @@ export async function boot() {
       par: level.par,
       modus: spec.mode,
       ziel: spec.goal,
+      groesse: spec.W + 'x' + spec.H + 'x' + spec.D,
     }),
   };
 

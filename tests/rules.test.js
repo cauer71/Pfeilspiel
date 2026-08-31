@@ -17,9 +17,7 @@ import {
 // --- Werkzeug -----------------------------------------------------------
 
 const vol = (W, H, D) => buildBoard({ mode: 'VOLUMEN', W, H, D });
-const fas = (W, H, D) => buildBoard({ mode: 'FASSADE', W, H, D });
 const V = (b, x, y, z) => cellIndexOf(b, `V:${x}:${y}:${z}`);
-const F = (b, f, u, v) => cellIndexOf(b, `F${f}:${u}:${v}`);
 
 /** RNG aus SPEC §11 — die Tests bleiben damit deterministisch. */
 function mulberry32(seed) {
@@ -158,37 +156,6 @@ test('RF-4: ausgeschiedener Stein und Index ausserhalb liefern INVALID/DEAD', ()
   }
 });
 
-test('RF-5: in FASSADE existiert die Nachbarwand fuer die Regel nicht', () => {
-  const b = fas(4, 4, 4);
-  // Ein Stein am Wandrand, der hinauszeigt, geht heraus - auch wenn auf der Nachbarwand
-  // an der entsprechenden Stelle etwas steht.
-  const rand = F(b, 0, 0, 0);
-  const nachbar = F(b, 3, 0, 0);
-  const state = createState(b, [{ cell: rand, dir: 2 }, { cell: nachbar, dir: 2 }], 'ABBAU');
-  const m = resolveMove(b, state, rand);
-  assert.equal(m.kind, 'EXIT', 'der Wandrand ist ein Rand, kein Uebergang');
-  assert.deepEqual(m.blocker, []);
-});
-
-test('RF-5: in FASSADE bleibt jede Bahn auf ihrer Flaeche', () => {
-  const b = fas(5, 5, 5);
-  const rng = mulberry32(2026);
-  for (let runde = 0; runde < 200; runde++) {
-    const state = emptyState(b, b.C, 'ABBAU');
-    for (let c = 0; c < b.C; c++) {
-      if (rng() >= 0.5) continue;
-      const dirs = validDirs(b, c);
-      addCube(state, c, dirs[Math.floor(rng() * dirs.length)]);
-    }
-    for (let c = 0; c < b.C; c++) {
-      if (state.occ[c] === EMPTY) continue;
-      const m = resolveMove(b, state, c);
-      for (const z of m.path) assert.equal(b.faceOf[z], b.faceOf[c], 'path verlaesst die Wand');
-      for (const z of m.blocker) assert.equal(b.faceOf[z], b.faceOf[c], 'Blocker von fremder Wand');
-    }
-  }
-});
-
 test('RF-6: ein Zug entfernt genau einen Stein, alle anderen bleiben unberuehrt', () => {
   const b = B5;
   const state = createState(b, [
@@ -207,7 +174,7 @@ test('RF-6: ein Zug entfernt genau einen Stein, alle anderen bleiben unberuehrt'
 });
 
 test('Terminierung: die Bahn ist hoechstens so lang wie die groesste Kante', () => {
-  for (const b of [B3, B5, B9, vol(6, 6, 6), fas(6, 6, 6)]) {
+  for (const b of [B3, B5, B9, vol(6, 6, 6), vol(4, 7, 5)]) {
     const grenze = Math.max(b.W, b.H, b.D);
     const rng = mulberry32(7);
     for (let runde = 0; runde < 50; runde++) {
@@ -236,7 +203,7 @@ test('Sackgassen existieren: zwei Steine, die aufeinander zeigen, kommen nie her
 });
 
 test('applyMove gefolgt von revertMove ist die Identitaet (10 000 Faelle)', () => {
-  const bretter = [vol(4, 4, 4), fas(5, 5, 4), vol(5, 2, 3)];
+  const bretter = [vol(4, 4, 4), vol(5, 5, 4), vol(5, 2, 3)];
   const rng = mulberry32(1234);
   let geprueft = 0;
 
@@ -269,7 +236,7 @@ test('applyMove gefolgt von revertMove ist die Identitaet (10 000 Faelle)', () =
 });
 
 test('path und blocker sind strukturell korrekt', () => {
-  const bretter = [vol(4, 4, 4), fas(5, 5, 4), vol(5, 2, 3)];
+  const bretter = [vol(4, 4, 4), vol(5, 5, 4), vol(5, 2, 3)];
   const rng = mulberry32(4711);
   const gesehen = { EXIT: 0, INVALID: 0 };
 
@@ -435,22 +402,20 @@ test('createState ist nachsichtig genug fuer verifyLevel: kaputte Eintraege werf
 
 // --- Regressionen aus der adversarialen Pruefung ------------------------
 
-test('Regression A: createState akzeptiert in FASSADE nur die vier Wandrichtungen', () => {
-  // Befund: `brauchbar` liess d=4/5 durch. Da step[i*6+4] in FASSADE ueberall OUT ist, war
-  // jeder so verfaelschte Wuerfel lebendig und lieferte bei jedem Tipp sofort EXIT — ein
-  // Level, dessen Richtungen auf 4 gedreht wurden, war trivial loesbar (SPEC §2.3, §10.4).
-  const b = fas(4, 4, 4);
-  assert.equal(b.C, 52, 'Vorbedingung: Kontrollwert aus §2.3');
-  for (const d of [4, 5]) {
+test('Regression A: createState akzeptiert nur Richtungen, die board.valid erlaubt', () => {
+  // Befund: `brauchbar` liess Richtungen durch, die auf dem Brett gesperrt sind. Ein so
+  // verfaelschter Wuerfel war lebendig und lieferte bei jedem Tipp sofort EXIT — ein Level,
+  // dessen Richtungen gedreht wurden, war trivial loesbar (SPEC §2.3, §10.4). Seit dem
+  // Wegfall der Schalenvariante ist keine der sechs Richtungen mehr gesperrt; die Pruefung
+  // muss aber weiterhin greifen, sobald eine Richtung ganz ausserhalb des Wertebereichs liegt.
+  const b = vol(4, 4, 4);
+  assert.equal(b.C, 64, 'Vorbedingung: massiver Quader');
+  for (const d of [-1, 6, 7, 255, 1.5, NaN, undefined, null, 'PX']) {
     const cubes = [];
-    for (let c = 0; c < b.C; c++) {
-      assert.equal(b.valid[c * 6 + d], 0, 'Vorbedingung: Richtung ist auf dem Brett ungueltig');
-      assert.equal(b.step[c * 6 + d], OUT, 'Vorbedingung: Schritt fuehrt nirgendwohin');
-      cubes.push({ cell: c, dir: d });
-    }
+    for (let c = 0; c < b.C; c++) cubes.push({ cell: c, dir: d });
     const state = createState(b, cubes, 'ABBAU');
     assert.equal(state.cubeCount, b.C, 'jeder Eintrag bekommt trotzdem eine Id');
-    assert.equal(state.aliveCount, 0, `Richtung ${d} darf in FASSADE keinen Wuerfel erzeugen`);
+    assert.equal(state.aliveCount, 0, `Richtung ${String(d)} darf keinen Wuerfel erzeugen`);
     for (let id = 0; id < state.cubeCount; id++) {
       assert.equal(state.alive[id], 0);
       assert.equal(state.cellOf[id], -1);
@@ -466,20 +431,20 @@ test('Regression A: createState akzeptiert in FASSADE nur die vier Wandrichtunge
   }
 
   // Eine einzelne verdrehte Richtung faellt aus der Aufstellung heraus, der Rest bleibt intakt.
-  const gut = [{ cell: F(b, 0, 0, 0), dir: 0 }, { cell: F(b, 0, 1, 0), dir: 1 },
-               { cell: F(b, 2, 0, 0), dir: 2 }];
+  const gut = [{ cell: V(b, 0, 0, 0), dir: 0 }, { cell: V(b, 0, 1, 0), dir: 1 },
+               { cell: V(b, 2, 0, 0), dir: 2 }];
   const heil = createState(b, gut, 'ABBAU');
   assert.equal(heil.aliveCount, 3);
-  const verfaelscht = createState(b, [gut[0], { ...gut[1], dir: 4 }, gut[2]], 'ABBAU');
+  const verfaelscht = createState(b, [gut[0], { ...gut[1], dir: 9 }, gut[2]], 'ABBAU');
   assert.equal(verfaelscht.aliveCount, 2);
   assert.equal(verfaelscht.alive[1], 0);
   assert.equal(verfaelscht.occ[gut[1].cell], EMPTY, 'die Zelle bleibt leer, statt zu leben');
 
-  // In VOLUMEN sind alle sechs Richtungen gueltig und muessen weiterhin durchgehen.
+  // Alle sechs echten Raumrichtungen muessen weiterhin durchgehen.
   const v = vol(3, 3, 3);
   for (let d = 0; d < 6; d++) {
     const s = createState(v, [{ cell: V(v, 1, 1, 1), dir: d }], 'ABBAU');
-    assert.equal(s.aliveCount, 1, `VOLUMEN: Richtung ${d} muss erlaubt bleiben`);
+    assert.equal(s.aliveCount, 1, `Richtung ${d} muss erlaubt bleiben`);
     assert.equal(s.dirOf[0], d);
   }
 });
@@ -621,7 +586,7 @@ test('Regression D2: undo kuerzt nur den eigenen Tipp samt nachfolgender unguelt
 
 test('Regression D3: Tippliste bleibt unter beliebigen Tipp/Undo-Folgen nachspielbar', () => {
   const rng = mulberry32(20260830);
-  const bretter = [vol(4, 3, 3), fas(4, 4, 4), vol(5, 2, 3)];
+  const bretter = [vol(4, 3, 3), vol(4, 4, 4), vol(5, 2, 3)];
   let mitUndo = 0, geloest = 0;
 
   for (let runde = 0; runde < 240; runde++) {

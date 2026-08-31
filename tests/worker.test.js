@@ -26,7 +26,7 @@ function alleDims() {
 function gueltigeNutzlast(aenderungen) {
   const basis = {
     name: 'Anna',
-    dirMode: 'fassade',
+    dirMode: 'volumen',
     goalMode: 'abbau',
     size: { x: 4, y: 4, z: 4 },
     cubes: 20,
@@ -34,7 +34,7 @@ function gueltigeNutzlast(aenderungen) {
     undos: 3,
     timeMs: 60000,
     seed: 589116,
-    levelCode: 'F-A-4x4x4-0-0008FA3C',
+    levelCode: 'V-A-4x4x4-0-0008FA3C',
     ruleVersion: RULE_VERSION,
     genVersion: GEN_VERSION,
     runId: '3f6d1c2a-9b41-4a77-8a0e-1d5b7c9e2f04',
@@ -50,21 +50,18 @@ test('1. capacity() stimmt fuer alle Dimensionen mit buildBoard().C ueberein', (
   const dims = alleDims();
   assert.ok(dims.length > 100);
   for (const { W, H, D } of dims) {
-    const cF = buildBoard({ mode: 'FASSADE', W, H, D }).C;
-    assert.equal(capacity('fassade', W, H, D), cF, `FASSADE ${W}x${H}x${D}`);
     const cV = buildBoard({ mode: 'VOLUMEN', W, H, D }).C;
     assert.equal(capacity('volumen', W, H, D), cV, `VOLUMEN ${W}x${H}x${D}`);
     assert.equal(cV, W * H * D);
   }
 });
 
-test('1b. capacity() trifft die Kontrollwerte aus §2.3', () => {
-  assert.equal(capacity('fassade', 3, 3, 3), 25);
-  assert.equal(capacity('fassade', 4, 4, 4), 52);
-  assert.equal(capacity('fassade', 5, 6, 5), 105);
-  assert.equal(capacity('fassade', 4, 5, 3), 52);
-  assert.equal(capacity('fassade', 7, 7, 4), 136);
-  assert.equal(capacity('fassade', 5, 7, 5), 121);
+test('1b. capacity() kennt nur volumen', () => {
+  // Die Schalenvariante FASSADE ist entfallen. Fuer jeden anderen Richtungsmodus darf
+  // capacity keine Zahl erfinden, sonst wuerde eine Einreichung an einer falschen
+  // Obergrenze gemessen (SPEC §9.4).
+  for (const dir of ['fassade', 'VOLUMEN', '', 'unsinn', null, undefined])
+    assert.ok(Number.isNaN(capacity(dir, 4, 4, 4)), 'capacity(' + String(dir) + ') liefert eine Zahl');
 });
 
 // --- 2. Untere Zugschranke ----------------------------------------------
@@ -77,15 +74,15 @@ test('2. minMoves: ABBAU = Wuerfelzahl, BEFREIUNG = 1', () => {
 });
 
 test('2b. Negativtest: keine Distanzschranke im Validierungspfad', () => {
-  // Eine Sprungkette traegt in EINEM Zug beliebig weit. Ein einziger Zug auf einem
-  // grossen Turm MUSS in BEFREIUNG akzeptiert werden.
+  // In BEFREIUNG muss nur der Zielstein heraus. Steht er frei, ist EIN Zug auf einem
+  // grossen Turm ein vollstaendiger Lauf und MUSS akzeptiert werden.
   const res = validateSubmission(gueltigeNutzlast({
     goalMode: 'befreiung',
     size: { x: 5, y: 7, z: 5 },
     cubes: 121,
     moves: 1,
     timeMs: 5000,
-    levelCode: 'F-B-5x7x5-0-0008FA3C'
+    levelCode: 'V-B-5x7x5-0-0008FA3C'
   }));
   assert.equal(res.ok, true);
   // Und die Quelle enthaelt an keiner Stelle eine Distanzhalbierung.
@@ -100,7 +97,7 @@ test('3. validateSubmission akzeptiert eine gueltige Nutzlast', () => {
   const res = validateSubmission(gueltigeNutzlast());
   assert.equal(res.ok, true);
   assert.equal(res.value.sizeKey, '4x4x4');
-  assert.equal(res.value.capacity, capacity('fassade', 4, 4, 4));
+  assert.equal(res.value.capacity, capacity('volumen', 4, 4, 4));
   assert.equal(res.value.undos, 3);
   assert.equal(res.value.taps, null);
   assert.equal(res.value.suspicion, 0, 'unauffaellige Nutzlast, kein Verdachtsbit');
@@ -133,10 +130,10 @@ test('3b. validateSubmission lehnt je Fehlerklasse ab', () => {
     ['Groesse ausserhalb', (p) => { p.size = { x: 2, y: 4, z: 4 }; }, 'validation', 'size'],
     ['Hoehe ausserhalb', (p) => { p.size = { x: 4, y: 25, z: 4 }; }, 'validation', 'size'],
     ['kaputter levelCode', (p) => { p.levelCode = 'X-A-4x4x4-0-0008FA3C'; }, 'validation', 'levelCode'],
-    ['levelCode passt nicht', (p) => { p.levelCode = 'V-A-4x4x4-0-0008FA3C'; }, 'implausible', 'levelCode'],
+    ['levelCode passt nicht', (p) => { p.levelCode = 'V-A-5x7x5-0-0008FA3C'; }, 'implausible', 'levelCode'],
     ['falsche ruleVersion', (p) => { p.ruleVersion = RULE_VERSION + 1; }, 'version_mismatch', 'ruleVersion'],
     ['falsche genVersion', (p) => { p.genVersion = GEN_VERSION + 1; }, 'version_mismatch', 'genVersion'],
-    ['cubes ueber Kapazitaet', (p) => { p.cubes = 53; p.moves = 60; }, 'implausible', 'cubes'],
+    ['cubes ueber Kapazitaet', (p) => { p.cubes = 65; p.moves = 70; }, 'implausible', 'cubes'],
     ['kaputte runId', (p) => { p.runId = 'nicht-uuid'; }, 'validation', 'runId'],
     ['taps kuerzer als moves', (p) => { p.taps = [1, 2, 3]; }, 'implausible', 'taps'],
     ['taps mit Unsinn', (p) => { p.taps = new Array(25).fill(0); p.taps[3] = -1; }, 'validation', 'taps'],

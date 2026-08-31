@@ -39,29 +39,8 @@ export const DIR6 = Object.freeze([
 ]);
 
 export const DIR6_NAMES = Object.freeze(['PX', 'NX', 'PY', 'NY', 'PZ', 'NZ']);
-export const FDIR4_NAMES = Object.freeze(['RECHTS', 'HOCH', 'LINKS', 'RUNTER']);
-
-/** Flaechenlokale Schritte (du,dv) zu FDIR4_NAMES (SPEC §2.3). */
-const FDIR4 = Object.freeze([
-  Object.freeze([1, 0]),
-  Object.freeze([0, 1]),
-  Object.freeze([-1, 0]),
-  Object.freeze([0, -1])
-]);
-
-/** Die fuenf Wandflaechen des Modus FASSADE (SPEC §2.3); es gilt U x V = N. */
-export const FACES = Object.freeze([
-  Object.freeze({ id: 'SUED', U: Object.freeze([-1, 0, 0]), V: Object.freeze([0, 1, 0]), N: Object.freeze([0, 0, -1]) }),
-  Object.freeze({ id: 'OST', U: Object.freeze([0, 0, -1]), V: Object.freeze([0, 1, 0]), N: Object.freeze([1, 0, 0]) }),
-  Object.freeze({ id: 'NORD', U: Object.freeze([1, 0, 0]), V: Object.freeze([0, 1, 0]), N: Object.freeze([0, 0, 1]) }),
-  Object.freeze({ id: 'WEST', U: Object.freeze([0, 0, 1]), V: Object.freeze([0, 1, 0]), N: Object.freeze([-1, 0, 0]) }),
-  Object.freeze({ id: 'DECKEL', U: Object.freeze([1, 0, 0]), V: Object.freeze([0, 0, -1]), N: Object.freeze([0, 1, 0]) })
-]);
 
 const OPP_VOLUMEN = Object.freeze([1, 0, 3, 2, 5, 4]);
-// In FASSADE sind d=4,5 ungueltig; ihre Eintraege zeigen der Sicherheit halber
-// auf sich selbst zurueck, damit ein versehentlicher Zugriff in step[] auf OUT laeuft.
-const OPP_FASSADE = Object.freeze([2, 3, 0, 1, 5, 4]);
 
 /** Tiefe einer in dieser Zelle ungueltigen Richtung — kann nie das Minimum werden. */
 const DEPTH_NONE = 0x7fffffff;
@@ -70,124 +49,72 @@ const DEPTH_NONE = 0x7fffffff;
 
 /**
  * @typedef {Object} Board
- * @property {'FASSADE'|'VOLUMEN'} mode
+ * @property {'VOLUMEN'} mode        nur noch ein Richtungsmodus; das Feld bleibt, damit
+ *                                   Levelcodes und Bestenlisteneintraege ihr Format halten
  * @property {number} W @property {number} H @property {number} D
  * @property {number} C
  * @property {Int32Array} step        [C*6] Nachbarindex oder OUT
  * @property {Uint8Array} valid       [C*6]
  * @property {Int8Array} opp          [6]
- * @property {number} dirCount        4 (FASSADE) | 6 (VOLUMEN)
+ * @property {number} dirCount        stets 6
  * @property {Float32Array} worldPos  [C*3]
  * @property {Float32Array} dirWorld  [C*6*3]
- * @property {Uint8Array} faceOf      [C]
- * @property {Float32Array} outNormal [C*3]
  * @property {Int32Array} lattice     [C*3]
  * @property {Int32Array} depthOf     [C*6]
  * @property {Int32Array} minDepthOf  [C]
- * @property {Int32Array|null} faceOff  [6] FASSADE-Flaechenoffsets, sonst null
- * @property {Int32Array|null} faceUMax [5]
- * @property {Int32Array|null} faceVMax [5]
  */
-
-/** Gitterkoordinaten einer FASSADE-Zelle (SPEC §2.3). */
-function fassadeLattice(f, u, v, W, H, D) {
-  switch (f) {
-    case 0: return [W - 1 - u, v, 0];
-    case 1: return [W - 1, v, D - 2 - u];
-    case 2: return [u, v, D - 1];
-    case 3: return [0, v, 1 + u];
-    default: return [u, H - 1, D - 1 - v];
-  }
-}
 
 /**
  * Baut das unveraenderliche Brett samt vorberechneter Schritttabelle.
- * @param {{mode:'FASSADE'|'VOLUMEN', W:number, H:number, D:number}} spec
+ * @param {{mode?:'VOLUMEN', W:number, H:number, D:number}} spec
  * @returns {Board}
  */
 export function buildBoard(spec) {
   const mode = spec && spec.mode;
-  if (mode !== 'FASSADE' && mode !== 'VOLUMEN') throw new RangeError('Modus: FASSADE oder VOLUMEN');
+  // Nur noch ein Richtungsmodus. Die frueher waehlbare Schalenvariante FASSADE ist auf
+  // Wunsch entfallen; ein Levelcode oder Hash, der sie nennt, wird abgelehnt statt
+  // stillschweigend umgedeutet.
+  if (mode !== undefined && mode !== 'VOLUMEN')
+    throw new RangeError('Modus: nur VOLUMEN (FASSADE ist entfallen)');
+
   const W = spec.W, H = spec.H, D = spec.D;
   if (!Number.isInteger(W) || !Number.isInteger(H) || !Number.isInteger(D))
     throw new RangeError('Dimensionen muessen ganzzahlig sein');
   if (!(W >= 3 && D >= 3 && H >= 2)) throw new RangeError('Dimensionen: W>=3, D>=3, H>=2');
   if (!(W <= 16 && H <= 24 && D <= 16)) throw new RangeError('Dimensionen zu gross');
 
-  const C = mode === 'VOLUMEN'
-    ? W * H * D
-    : 2 * W * (H - 1) + 2 * (D - 2) * (H - 1) + W * D;
+  const C = W * H * D;
   if (C > MAX_CUBES) throw new RangeError('Zellzahl ueber MAX_CUBES');
 
   const step = new Int32Array(C * 6).fill(OUT);
-  const valid = new Uint8Array(C * 6);
+  const valid = new Uint8Array(C * 6).fill(1);
   const worldPos = new Float32Array(C * 3);
   const dirWorld = new Float32Array(C * 6 * 3);
-  const faceOf = new Uint8Array(C);
-  const outNormal = new Float32Array(C * 3);
   const lattice = new Int32Array(C * 3);
   const depth = new Int32Array(C * 6).fill(DEPTH_NONE);
   const minDepth = new Int32Array(C);
 
-  let faceOff = null, faceUMax = null, faceVMax = null;
-
-  if (mode === 'VOLUMEN') {
-    const idx = (x, y, z) => (x * H + y) * D + z;
-    for (let x = 0; x < W; x++) {
-      for (let y = 0; y < H; y++) {
-        for (let z = 0; z < D; z++) {
-          const i = idx(x, y, z);
-          lattice[i * 3] = x; lattice[i * 3 + 1] = y; lattice[i * 3 + 2] = z;
-          faceOf[i] = 255;
-          let md = DEPTH_NONE;
-          for (let d = 0; d < 6; d++) {
-            const dv = DIR6[d];
-            const nx = x + dv[0], ny = y + dv[1], nz = z + dv[2];
-            const drin = nx >= 0 && nx < W && ny >= 0 && ny < H && nz >= 0 && nz < D;
-            step[i * 6 + d] = drin ? idx(nx, ny, nz) : OUT;
-            valid[i * 6 + d] = 1;
-            dirWorld[(i * 6 + d) * 3] = dv[0];
-            dirWorld[(i * 6 + d) * 3 + 1] = dv[1];
-            dirWorld[(i * 6 + d) * 3 + 2] = dv[2];
-          }
-          depth[i * 6 + 0] = W - 1 - x; depth[i * 6 + 1] = x;
-          depth[i * 6 + 2] = H - 1 - y; depth[i * 6 + 3] = y;
-          depth[i * 6 + 4] = D - 1 - z; depth[i * 6 + 5] = z;
-          for (let d = 0; d < 6; d++) if (depth[i * 6 + d] < md) md = depth[i * 6 + d];
-          minDepth[i] = md;
+  const idx = (x, y, z) => (x * H + y) * D + z;
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) {
+      for (let z = 0; z < D; z++) {
+        const i = idx(x, y, z);
+        lattice[i * 3] = x; lattice[i * 3 + 1] = y; lattice[i * 3 + 2] = z;
+        for (let d = 0; d < 6; d++) {
+          const dv = DIR6[d];
+          const nx = x + dv[0], ny = y + dv[1], nz = z + dv[2];
+          const drin = nx >= 0 && nx < W && ny >= 0 && ny < H && nz >= 0 && nz < D;
+          step[i * 6 + d] = drin ? idx(nx, ny, nz) : OUT;
+          dirWorld[(i * 6 + d) * 3] = dv[0];
+          dirWorld[(i * 6 + d) * 3 + 1] = dv[1];
+          dirWorld[(i * 6 + d) * 3 + 2] = dv[2];
         }
-      }
-    }
-  } else {
-    faceUMax = Int32Array.of(W, D - 2, W, D - 2, W);
-    faceVMax = Int32Array.of(H - 1, H - 1, H - 1, H - 1, D);
-    faceOff = new Int32Array(6);
-    for (let f = 0; f < 5; f++) faceOff[f + 1] = faceOff[f] + faceUMax[f] * faceVMax[f];
-
-    for (let f = 0; f < 5; f++) {
-      const uM = faceUMax[f], vM = faceVMax[f];
-      const U = FACES[f].U, V = FACES[f].V, N = FACES[f].N;
-      for (let v = 0; v < vM; v++) {
-        for (let u = 0; u < uM; u++) {
-          const i = faceOff[f] + v * uM + u;
-          const xyz = fassadeLattice(f, u, v, W, H, D);
-          lattice[i * 3] = xyz[0]; lattice[i * 3 + 1] = xyz[1]; lattice[i * 3 + 2] = xyz[2];
-          faceOf[i] = f;
-          outNormal[i * 3] = N[0]; outNormal[i * 3 + 1] = N[1]; outNormal[i * 3 + 2] = N[2];
-          for (let d = 0; d < 4; d++) {
-            const du = FDIR4[d][0], dv = FDIR4[d][1];
-            const nu = u + du, nv = v + dv;
-            const drin = nu >= 0 && nu < uM && nv >= 0 && nv < vM;
-            step[i * 6 + d] = drin ? (faceOff[f] + nv * uM + nu) : OUT;
-            valid[i * 6 + d] = 1;
-            for (let k = 0; k < 3; k++) dirWorld[(i * 6 + d) * 3 + k] = du * U[k] + dv * V[k];
-          }
-          depth[i * 6 + 0] = uM - 1 - u; depth[i * 6 + 1] = vM - 1 - v;
-          depth[i * 6 + 2] = u; depth[i * 6 + 3] = v;
-          let md = DEPTH_NONE;
-          for (let d = 0; d < 4; d++) if (depth[i * 6 + d] < md) md = depth[i * 6 + d];
-          minDepth[i] = md;
-        }
+        depth[i * 6 + 0] = W - 1 - x; depth[i * 6 + 1] = x;
+        depth[i * 6 + 2] = H - 1 - y; depth[i * 6 + 3] = y;
+        depth[i * 6 + 4] = D - 1 - z; depth[i * 6 + 5] = z;
+        let md = DEPTH_NONE;
+        for (let d = 0; d < 6; d++) if (depth[i * 6 + d] < md) md = depth[i * 6 + d];
+        minDepth[i] = md;
       }
     }
   }
@@ -199,13 +126,12 @@ export function buildBoard(spec) {
   }
 
   return {
-    mode, W, H, D, C,
+    mode: 'VOLUMEN', W, H, D, C,
     step, valid,
-    opp: Int8Array.from(mode === 'VOLUMEN' ? OPP_VOLUMEN : OPP_FASSADE),
-    dirCount: mode === 'VOLUMEN' ? 6 : 4,
-    worldPos, dirWorld, faceOf, outNormal, lattice,
-    depthOf: depth, minDepthOf: minDepth,
-    faceOff, faceUMax, faceVMax
+    opp: Int8Array.from(OPP_VOLUMEN),
+    dirCount: 6,
+    worldPos, dirWorld, lattice,
+    depthOf: depth, minDepthOf: minDepth
   };
 }
 
@@ -213,43 +139,31 @@ function pruefeZelle(board, i) {
   if (!Number.isInteger(i) || i < 0 || i >= board.C) throw new RangeError('Zellindex ausserhalb: ' + i);
 }
 
-/** FASSADE: `F${f}:${u}:${v}`, VOLUMEN: `V:${x}:${y}:${z}`. */
+/** Zellschluessel `V:${x}:${y}:${z}`. */
 export function cellKey(board, i) {
   pruefeZelle(board, i);
-  if (board.mode === 'VOLUMEN')
-    return 'V:' + board.lattice[i * 3] + ':' + board.lattice[i * 3 + 1] + ':' + board.lattice[i * 3 + 2];
-  const f = board.faceOf[i];
-  const r = i - board.faceOff[f];
-  const uM = board.faceUMax[f];
-  return 'F' + f + ':' + (r % uM) + ':' + ((r / uM) | 0);
+  return 'V:' + board.lattice[i * 3] + ':' + board.lattice[i * 3 + 1] + ':' + board.lattice[i * 3 + 2];
 }
 
-const KEY_FASSADE = /^F([0-4]):(\d{1,3}):(\d{1,3})$/;
 const KEY_VOLUMEN = /^V:(\d{1,3}):(\d{1,3}):(\d{1,3})$/;
 
 /** Umkehrung von cellKey; -1 wenn der Schluessel auf diesem Brett nicht existiert. */
 export function cellIndexOf(board, key) {
   if (typeof key !== 'string') return -1;
-  if (board.mode === 'VOLUMEN') {
-    const m = KEY_VOLUMEN.exec(key);
-    if (!m) return -1;
-    const x = +m[1], y = +m[2], z = +m[3];
-    if (x >= board.W || y >= board.H || z >= board.D) return -1;
-    return (x * board.H + y) * board.D + z;
-  }
-  const m = KEY_FASSADE.exec(key);
+  const m = KEY_VOLUMEN.exec(key);
   if (!m) return -1;
-  const f = +m[1], u = +m[2], v = +m[3];
-  if (u >= board.faceUMax[f] || v >= board.faceVMax[f]) return -1;
-  return board.faceOff[f] + v * board.faceUMax[f] + u;
+  const x = +m[1], y = +m[2], z = +m[3];
+  if (x >= board.W || y >= board.H || z >= board.D) return -1;
+  return (x * board.H + y) * board.D + z;
 }
 
-/** @returns {[number,number,number]} */
+/** Gitterkoordinaten [x, y, z] dieser Zelle. */
 export function latticeOf(board, i) {
   pruefeZelle(board, i);
   return [board.lattice[i * 3], board.lattice[i * 3 + 1], board.lattice[i * 3 + 2]];
 }
 
+/** Weltposition der Zellmitte; schreibt nach `out`, wenn angegeben. */
 export function worldPosOf(board, i, out) {
   pruefeZelle(board, i);
   const o = out || [0, 0, 0];
@@ -257,6 +171,7 @@ export function worldPosOf(board, i, out) {
   return o;
 }
 
+/** Weltrichtung der Richtung d in dieser Zelle; Nullvektor, wenn d hier ungueltig ist. */
 export function dirWorldOf(board, i, d, out) {
   pruefeZelle(board, i);
   const o = out || [0, 0, 0];
@@ -265,12 +180,6 @@ export function dirWorldOf(board, i, d, out) {
   return o;
 }
 
-export function outNormalOf(board, i, out) {
-  pruefeZelle(board, i);
-  const o = out || [0, 0, 0];
-  o[0] = board.outNormal[i * 3]; o[1] = board.outNormal[i * 3 + 1]; o[2] = board.outNormal[i * 3 + 2];
-  return o;
-}
 
 /** Gueltige Richtungen dieser Zelle, aufsteigend. */
 export function validDirs(board, i) {
@@ -344,9 +253,9 @@ export function emptyState(board, capacity, goal) {
  * doppelt belegte Zellen verdecken einander (der spaetere Eintrag gewinnt die Zelle). So kann
  * verifyLevel verfaelschte Level ablehnen, statt an einer Ausnahme abzubrechen (SPEC §6.8).
  * Unbrauchbar ist ein Eintrag, dessen Zelle ausserhalb liegt ODER dessen Richtung in genau
- * dieser Zelle nicht erlaubt ist (`board.valid`). Letzteres ist in FASSADE der Fall fuer d=4
- * und d=5 (SPEC §2.3): ohne diese Pruefung wuerde ein auf 4 gedrehter Pfeil bei jedem Tipp
- * sofort EXIT liefern und ein so verfaelschtes Level trivial loesbar machen.
+ * dieser Zelle nicht erlaubt ist (`board.valid`). Im einzigen Richtungsmodus sind alle sechs
+ * Richtungen erlaubt; die Pruefung bleibt, weil sie eine verfaelschte Levelbeschreibung
+ * abfaengt, statt sie stillschweigend zu spielen.
  */
 export function createState(board, cubes, goal) {
   const n = cubes.length;
@@ -768,7 +677,7 @@ export function toRunLog(session, meta) {
     seed: l.seed,
     genVersion: l.genVersion,
     ruleVersion: l.ruleVersion,
-    dirMode: b.mode === 'VOLUMEN' ? 'volumen' : 'fassade',
+    dirMode: 'volumen',
     goalMode: session.state.goal === 'BEFREIUNG' ? 'befreiung' : 'abbau',
     size: { x: b.W, y: b.H, z: b.D },
     cubes: l.cubes.length,
