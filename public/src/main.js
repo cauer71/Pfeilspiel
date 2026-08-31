@@ -574,6 +574,26 @@ export async function boot() {
     zug: (cell) => spielZug(cell),
     get beschaeftigt() { return anim.busy; },
     legaleZellen: () => legalCells(board, session.state),
+    /**
+     * Welche Zelle meldet der ECHTE Zeigerstrahl an dieser Bildschirmstelle? Und wo
+     * liegt eine Zelle auf dem Bildschirm? Beides nur lesend, fuer den E2E-Lauf: nur
+     * damit laesst sich pruefen, dass ein 2x1-Stein (eine Group aus drei Meshes)
+     * ueberhaupt getroffen wird und nicht bloss die Regel ihn erlauben wuerde.
+     */
+    zelleAnPunkt: (x, y) => {
+      const hit = input.pickAt(x, y, 0);
+      const c = hit && hit.object && hit.object.userData ? hit.object.userData.cell : -1;
+      return Number.isInteger(c) ? c : -1;
+    },
+    ortVonZelle: (cell) => {
+      const p = view.worldOf(cell).clone();
+      const cube = view.get(session.state.occ[cell]);
+      if (cube && cube.offset) p.add(cube.offset);
+      welt.towerGroup.localToWorld(p);
+      p.project(camera);
+      const r = canvas.getBoundingClientRect();
+      return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (-p.y * 0.5 + 0.5) * r.height };
+    },
     zustand: () => ({
       moves: session.moves,
       undos: session.undos,

@@ -1911,9 +1911,21 @@ raycaster.layers.set(LAYER_PICK);
 const r = canvas.getBoundingClientRect();       // NICHT innerWidth
 ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
 raycaster.setFromCamera(ndc, camera);
-const hit = raycaster.intersectObjects(towerGroup.children, false)[0];
+const hit = raycaster.intersectObject(towerGroup, true)[0];   // REKURSIV, siehe unten
 // -> hit.object.userData.cell  (Zellindex, nicht cubeId: das Spiel tippt Zellen an)
 ```
+
+**Der Strahl MUSS rekursiv laufen.** Ein 1x1-Stein ist ein Mesh und damit direktes Kind von
+`towerGroup`, ein 2x1-Stein aber eine `THREE.Group` aus drei Meshes (§8.5.1). Eine Group hat
+keine Geometrie: `intersectObjects(towerGroup.children, false)` prueft nur die direkten Kinder
+und trifft einen langen Stein deshalb **nie** — er waere ueberhaupt nicht antippbar, obwohl die
+Regel ihn erlaubt und die Referenzloesung ihn antippt. Die Auswahlebene filtert weiterhin je
+Mesh; three.js steigt auch in Objekte hinab, die die Ebenenpruefung selbst nicht bestehen, die
+Group braucht `LAYER_PICK` also nicht.
+
+`tests/render.test.js` fuehrt dazu einen Regressionsfall: eine Zelle, die in einer Group unter
+`pickRoot` liegt, MUSS `onTap` ausloesen. `tests/e2e.mjs` prueft es zusaetzlich am echten
+Strahl im Browser und entfernt einen 2x1-Stein per Mausklick.
 
 Dicke-Finger-Fallback auf Touch: trifft der zentrale Strahl nichts, vier Zusatzstrahlen bei
 ±10 CSS-px, naechstliegender Treffer gewinnt.

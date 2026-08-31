@@ -41,6 +41,7 @@ async function warteRuhig(page, ms = 8000) {
 async function warteAufServer(ms = 15000) {
   const ende = Date.now() + ms;
   while (Date.now() < ende) {
+    if (serverTot) throw new Error(serverTot + ' — laeuft schon ein E2E-Lauf?');
     try {
       const r = await fetch(`${BASIS}/index.html`);
       if (r.ok) return true;
@@ -56,6 +57,15 @@ const server = spawn(process.execPath, [join(WURZEL, 'tools', 'serve.js')], {
 });
 server.stdout.on('data', d => process.env.E2E_VERBOSE && process.stdout.write(`[server] ${d}`));
 server.stderr.on('data', d => process.stderr.write(`[server] ${d}`));
+
+// Stirbt der eigene Server (typischerweise EADDRINUSE, weil ein Lauf von vorher noch
+// laeuft), antwortet auf dem Port ein FREMDER Server. Der Lauf wuerde dann munter
+// weiterpruefen und moeglicherweise einen alten Stand testen. Also laut scheitern.
+let serverTot = null;
+let fertig = false;
+server.on('exit', (code, signal) => {
+  if (!fertig) serverTot = `Entwicklungsserver beendet (code ${code}, signal ${signal})`;
+});
 
 let browser;
 try {
@@ -225,6 +235,71 @@ try {
   await page.waitForFunction(() => globalThis.__pfeilspiel.beschaeftigt === false, null, { timeout: 30000 });
   pruefe(true, 'Rueckwechsel auf einen kleinen Turm funktioniert');
 
+  // --- 2x1-Steine muessen antippbar sein ---------------------------------
+  // Ein 2x1-Stein ist im Szenengraph eine Group aus drei Meshes. Ein nicht rekursiver
+  // Strahl trifft eine Group nie — die langen Steine liessen sich dann ueberhaupt nicht
+  // entfernen, obwohl die Regel sie erlaubt. Geprueft wird deshalb der ECHTE Strahl.
+  //
+  // Zwei Feinheiten: legalCells nennt BEIDE Zellen eines langen Steins, die Trefferzelle
+  // ist aber immer der Anker; und ein davorstehender Stein darf einen Anker verdecken.
+  // Gezaehlt wird also je STEIN, und es genuegt, dass irgendeine seiner Stellen ihn meldet.
+  const langePruefung = await page.evaluate(() => {
+    const P = globalThis.__pfeilspiel;
+    const st = P.session.state;
+    const steine = new Map();       // cubeId -> Zellen des Steins
+    for (const cell of P.legaleZellen()) {
+      const id = st.occ[cell];
+      if (id < 0 || st.extOf[id] === 255) continue;
+      const anker = st.cellOf[id];
+      const zweite = P.board.step[anker * 6 + st.extOf[id]];
+      steine.set(id, { anker, zellen: [anker, zweite] });
+    }
+    let getroffen = 0;
+    for (const { anker, zellen } of steine.values()) {
+      let ok = false;
+      for (const c of zellen) {
+        const o = P.ortVonZelle(c);
+        if (P.zelleAnPunkt(o.x, o.y) === anker) { ok = true; break; }
+      }
+      if (ok) getroffen++;
+    }
+    return { steine: steine.size, getroffen };
+  });
+  pruefe(langePruefung.steine > 0, `Es gibt ziehbare 2x1-Steine (${langePruefung.steine})`);
+  pruefe(langePruefung.getroffen > 0,
+    `Der Strahl trifft 2x1-Steine (${langePruefung.getroffen}/${langePruefung.steine} sichtbar)`);
+
+  // Und ein echter Klick auf einen davon entfernt ihn wirklich.
+  const ziel = await page.evaluate(() => {
+    const P = globalThis.__pfeilspiel;
+    const st = P.session.state;
+    const gesehen = new Set();
+    for (const cell of P.legaleZellen()) {
+      const id = st.occ[cell];
+      if (id < 0 || st.extOf[id] === 255 || gesehen.has(id)) continue;
+      gesehen.add(id);
+      const anker = st.cellOf[id];
+      for (const c of [anker, P.board.step[anker * 6 + st.extOf[id]]]) {
+        const o = P.ortVonZelle(c);
+        if (P.zelleAnPunkt(o.x, o.y) === anker) return { anker, x: o.x, y: o.y };
+      }
+    }
+    return null;
+  });
+  let langWeg = false;
+  if (ziel) {
+    const vor = await page.evaluate(() => globalThis.__pfeilspiel.zustand());
+    await page.mouse.click(ziel.x, ziel.y);
+    await page.waitForFunction(() => globalThis.__pfeilspiel.beschaeftigt === false,
+      null, { timeout: 15000 });
+    const nach = await page.evaluate((c) => ({
+      moves: globalThis.__pfeilspiel.zustand().moves,
+      leer: globalThis.__pfeilspiel.session.state.occ[c] === -1
+    }), ziel.anker);
+    langWeg = nach.leer && nach.moves === vor.moves + 1;
+  }
+  pruefe(langWeg, 'Ein echter Klick auf einen 2x1-Stein entfernt ihn');
+
   // --- Zielmodus BEFREIUNG -------------------------------------------------
   await page.evaluate(() => {
     const el = document.getElementById('ps-goal');
@@ -297,6 +372,7 @@ try {
   fehler.push(`Ausnahme: ${e.message}`);
   console.error('\nAbbruch:', e);
 } finally {
+  fertig = true;
   if (browser) await browser.close().catch(() => {});
   server.kill('SIGTERM');
 }

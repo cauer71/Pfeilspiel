@@ -1751,7 +1751,11 @@ export function createPointerInput(opts) {
 
   function rayAt(x, y) {
     raycaster.setFromCamera(ndcFrom(x, y), camera);
-    const hits = raycaster.intersectObjects(pickRoot.children, false);
+    // REKURSIV. Ein 1x1-Stein ist ein Mesh und damit direktes Kind von pickRoot, ein
+    // 2x1-Stein aber eine Group aus drei Meshes (SPEC §8.5.1). Eine Group hat keine
+    // Geometrie: ohne Rekursion trifft der Strahl sie nie, und die langen Steine waeren
+    // ueberhaupt nicht antippbar. Die Layermaske filtert weiterhin je Mesh.
+    const hits = raycaster.intersectObject(pickRoot, true);
     return hits.length ? hits[0] : null;
   }
 
