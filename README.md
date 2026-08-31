@@ -91,10 +91,10 @@ npm run serve        # http://localhost:8787
 ## Tests
 
 ```bash
-npm test             # 217 Node-Tests: Geometrie, Zugregel, Generator, Verifikation,
-                     # Sitzung, Zeigereingabe, Overlays, Skins samt Kontrastproben,
-                     # Worker-Validierung und -Anfragebearbeitung, API-Klient,
-                     # Einzeldatei-Frischeprüfung, Rauchtest
+npm test             # 226 Node-Tests: Geometrie, Zugregel, zweizellige Steine,
+                     # Generator und Lösbarkeitsgarantie, Sitzung, Zeigereingabe,
+                     # Overlays, Skins samt Kontrastproben, Worker-Validierung und
+                     # -Anfragebearbeitung, API-Klient, Einzeldatei-Frischeprüfung
 npm run e2e          # 31 Prüfungen im echten Browser (Playwright + Chromium)
 ```
 
