@@ -2,9 +2,10 @@
 
 Ein dreidimensionales Denkspiel im Browser: ein Turm aus weißen Steinen, jeder mit einem
 schwarzen Pfeil. Ein Tipp schickt den Stein in seine Pfeilrichtung aus dem Turm — aber nur,
-wenn seine Bahn frei ist. Steht irgendwo davor ein anderer Stein, passiert nichts. Neben
-einzelnen Würfeln gibt es längliche Steine, die zwei Felder belegen. Der Turm lässt sich frei
-drehen und zoomen.
+wenn seine Bahn frei ist. Steht irgendwo davor ein anderer Stein, prallt er dagegen und fällt
+zurück. Neben einzelnen Würfeln gibt es längliche Steine, die zwei Felder belegen. Der Turm
+lässt sich um alle drei Achsen frei drehen — seitlich herum, über den Scheitel hinweg und
+rollend — und zoomen.
 
 Kein Build-Schritt, keine Laufzeitabhängigkeiten, reines ES-Modul-JavaScript.
 Three.js liegt selbst gehostet im Repository.
@@ -19,7 +20,7 @@ feste Richtung `d`. Er bewegt sich immer als Ganzes.
 | | Regel |
 |---|---|
 | **Austritt** | Die Bahn in Pfeilrichtung ist bis zum Rand frei → der Stein verlässt den Turm ganz, in genau einem Zug. |
-| **Ungültig** | Steht irgendwo auf dieser Bahn ein anderer Stein → nichts passiert, der Stein wackelt nur und der Blockierer blitzt rot auf. |
+| **Ungültig** | Steht irgendwo auf dieser Bahn ein anderer Stein → nichts passiert. Der Stein läuft die freie Strecke an, prallt gegen seinen Blockierer — der rot aufblitzt — und federt auf sein Feld zurück. |
 
 **Es gibt weder Schritt noch Sprung.** Ein blockierter Stein bleibt blockiert, bis sein
 Blockierer selbst gegangen ist — genau darin besteht das Spiel.
@@ -88,7 +89,7 @@ npm run serve        # http://localhost:8787
 ## Tests
 
 ```bash
-npm test             # 223 Node-Tests: Geometrie, Zugregel, zweizellige Steine,
+npm test             # 229 Node-Tests: Geometrie, Zugregel, zweizellige Steine,
                      # Generator und Lösbarkeitsgarantie, Sitzung, Zeigereingabe,
                      # Overlays, Skins samt Kontrastproben, Worker-Validierung und
                      # -Anfragebearbeitung, API-Klient, Einzeldatei-Frischeprüfung

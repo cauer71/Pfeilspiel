@@ -83,9 +83,11 @@ const FIXTURES = [
     board: B5,
     cubes: b => [{ cell: X(b, 0), dir: PX }, { cell: X(b, 3), dir: PX }],
     tap: b => X(b, 0),
+    // Der Stein bewegt sich nicht. `path` nennt trotzdem die freie Anlaufstrecke bis
+    // vor den Blockierer — allein fuer die Anprallanimation (SPEC §1.3 RF-3, §8.9).
     move: b => ({
       kind: 'INVALID', reason: 'BLOCKED', cubeId: 0, from: X(b, 0), to: OUT,
-      path: [X(b, 0)], blocker: [X(b, 3)]
+      path: [X(b, 0), X(b, 1), X(b, 2)], blocker: [X(b, 3)]
     })
   },
   {
@@ -260,10 +262,18 @@ test('path und blocker sind strukturell korrekt', () => {
       assert.equal(m.to, OUT, 'to ist immer OUT');
 
       if (m.kind === 'INVALID') {
-        assert.deepEqual(m.path, [c]);
         assert.equal(m.reason, 'BLOCKED');
         assert.equal(m.blocker.length, 1, 'genau der erste Blockierer wird gemeldet');
         assert.notEqual(state.occ[m.blocker[0]], EMPTY);
+        // Die Anlaufstrecke liegt auf dem Strahl, ist frei und endet unmittelbar vor
+        // dem Blockierer. Sie ist reine Darstellung; der Zustand aendert sich nicht.
+        for (let k = 0; k + 1 < m.path.length; k++)
+          assert.equal(b.step[m.path[k] * 6 + d], m.path[k + 1], 'Anlauf nicht auf dem Strahl');
+        for (let k = 1; k < m.path.length; k++)
+          assert.equal(state.occ[m.path[k]], EMPTY, 'Anlauf war nicht frei');
+        assert.equal(new Set(m.path).size, m.path.length, 'Anlauf enthaelt Wiederholungen');
+        assert.equal(b.step[m.path[m.path.length - 1] * 6 + d], m.blocker[0],
+          'Anlauf endet nicht unmittelbar vor dem Blockierer');
         continue;
       }
 
@@ -628,4 +638,42 @@ test('Regression D3: Tippliste bleibt unter beliebigen Tipp/Undo-Folgen nachspie
   }
   assert.ok(mitUndo > 200, `zu wenige Undos im Lauf: ${mitUndo}`);
   assert.ok(geloest > 0, 'kein einziger Lauf wurde geloest — der Test prueft zu wenig');
+});
+
+test('RF-3: die Bahn eines blockierten Steins nennt die freie Anlaufstrecke', () => {
+  // Die Regel bleibt: der Stein bewegt sich nicht. Aber `path` muss die Zellen nennen,
+  // die er bis zum Blockierer noch durchlaufen KOENNTE — die Darstellung laesst ihn
+  // damit sichtbar gegen sein Hindernis prallen (SPEC §1.3 RF-3, §8.9).
+  const b = vol(6, 3, 3);
+  const von = V(b, 0, 1, 1);          // ganz links, Pfeil nach +X
+  for (const abstand of [1, 2, 3, 4, 5]) {
+    const sperre = V(b, abstand, 1, 1);
+    const state = createState(b, [{ cell: von, dir: PX }, { cell: sperre, dir: PY }], 'ABBAU');
+    const m = resolveMove(b, state, von);
+    assert.equal(m.kind, 'INVALID', `Abstand ${abstand}`);
+    assert.equal(m.reason, 'BLOCKED');
+    assert.deepEqual(m.blocker, [sperre]);
+    assert.equal(m.to, OUT, 'ein blockierter Zug endet nirgendwo');
+    // path = Startzelle plus jede freie Zelle davor. Bei Abstand 1 bleibt nur der Start.
+    assert.equal(m.path.length, abstand, `Anlaufstrecke bei Abstand ${abstand}`);
+    assert.equal(m.path[0], von, 'path beginnt an der Startzelle');
+    assert.equal(m.path[m.path.length - 1], b.step[sperre * 6 + b.opp[PX]],
+      'path endet unmittelbar vor dem Blockierer');
+    for (const c of m.path) assert.notEqual(c, sperre, 'die Sperrzelle gehoert nicht zur Bahn');
+    // Und der Zustand bleibt unberuehrt.
+    const vorher = snap(state);
+    applyMove(state, m);
+    assert.deepEqual(snap(state), vorher, 'ein ungueltiger Zug aendert nichts');
+  }
+});
+
+test('RF-4: ein toter Tipp hat keine Anlaufstrecke', () => {
+  const b = vol(4, 4, 4);
+  const state = createState(b, [{ cell: V(b, 0, 0, 0), dir: PX }], 'ABBAU');
+  for (const c of [V(b, 1, 1, 1), -1, b.C]) {
+    const m = resolveMove(b, state, c);
+    assert.equal(m.reason, 'DEAD');
+    assert.deepEqual(m.path, [c], 'DEAD kennt nur die getippte Zelle');
+    assert.deepEqual(m.blocker, []);
+  }
 });

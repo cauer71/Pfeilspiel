@@ -144,7 +144,7 @@ test('three steckt eingebettet in der Einzeldatei, nicht hinter einem Verweis', 
     assert.ok(ERZEUGNIS.includes(marke), 'three unvollstaendig: "' + marke + '" fehlt.');
   }
   // Die Addons wurden auf denselben Geltungsbereich umgeschrieben.
-  assert.ok(ERZEUGNIS.includes('class OrbitControls'), 'OrbitControls fehlt.');
+  assert.ok(ERZEUGNIS.includes('class TrackballControls'), 'TrackballControls fehlt.');
   assert.ok(ERZEUGNIS.includes('RoomEnvironment'), 'RoomEnvironment fehlt.');
 });
 

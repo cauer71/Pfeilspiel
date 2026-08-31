@@ -20,7 +20,7 @@ try {
 }
 const skip = (render && THREE) ? false : 'three nicht aufloesbar';
 
-/** Winziger Ereignisverteiler fuer Canvas, Fenster und OrbitControls-Attrappe. */
+/** Winziger Ereignisverteiler fuer Canvas, Fenster und Steuerungsattrappe. */
 function verteiler() {
   const map = new Map();
   return {
@@ -101,7 +101,7 @@ function baueEingabe(verschachtelt) {
     down: (x, y) => canvas.feuere('pointerdown', ev(x, y)),
     move: (x, y) => fenster.feuere('pointermove', ev(x, y)),
     up: (x, y) => fenster.feuere('pointerup', ev(x, y)),
-    /** Ein change-Ereignis von OrbitControls, wie es je Bild faellt. */
+    /** Ein change-Ereignis der Kamerasteuerung, wie es je Bild faellt. */
     kamera: () => controls.feuere('change', {}),
     dispose: () => input.dispose()
   };
@@ -125,7 +125,7 @@ test('Wischen ueber die Touch-Schwelle loest keinen Tap aus', { skip }, () => {
 });
 
 test('Fingerzittern unter der Zittertoleranz ueberlebt den Daempfungsnachlauf', { skip }, () => {
-  // Turm gedreht, losgelassen, sofort getippt: OrbitControls meldet waehrend des
+  // Turm gedreht, losgelassen, sofort getippt: die Steuerung meldet waehrend des
   // gesamten Nachlaufs Aenderungen. Ein Tap mit 2 px Zittern ist gewollt.
   const e = baueEingabe();
   e.kamera();
@@ -182,4 +182,83 @@ test('ein Stein in einer Group ist antippbar (2x1-Steine)', { skip }, () => {
   e.up(400, 300);
   assert.deepEqual(e.taps, [0], 'Tap auf einen verschachtelten Stein kam nicht an');
   e.dispose();
+});
+
+// --- Anprallanimation eines blockierten Steins (SPEC §8.9) ----------------
+
+/** Minimale Turmansicht-Attrappe: ein Stein auf einem 1D-Raster entlang +X. */
+function baueSicht(cellSize) {
+  const mesh = new THREE.Object3D();
+  mesh.matrixAutoUpdate = false;
+  const cube = { mesh, dir: 0, offset: new THREE.Vector3(0, 0, 0), busy: false };
+  const geblitzt = [];
+  return {
+    cube,
+    geblitzt,
+    sicht: {
+      get: () => cube,
+      worldOf: (cell) => new THREE.Vector3(cell * cellSize, 0, 0),
+      dirVectorOf: () => new THREE.Vector3(1, 0, 0),
+      flashBlocker: (c) => geblitzt.push(c),
+      detachToFlying: () => {},
+      acquireFade: () => {},
+      commitMove: () => {}
+    }
+  };
+}
+
+test('ein blockierter Stein laeuft an, prallt an und kehrt zurueck', { skip }, () => {
+  // Die Regel bewegt ihn nicht — aber man muss sehen, WARUM nichts passiert. Ohne
+  // diese Animation stand der Stein bloss da und wackelte um 0.1 Zellen.
+  const { cube, geblitzt, sicht } = baueSicht(1.0);
+  const move = { kind: 'INVALID', reason: 'BLOCKED', cubeId: 0, from: 0, to: -1,
+    path: [0, 1, 2], blocker: [3] };           // drei Zellen Anlauf, Sperre bei 3
+  const tweens = render.buildTweens(sicht, { W: 6, H: 3, D: 3 }, move, {});
+  assert.equal(tweens.length, 2, 'Anlauf und Rueckkehr');
+  assert.equal(cube.busy, true);
+
+  // Anlauf: am Ende steht der Stein unmittelbar vor dem Blockierer, also zwei Zellen
+  // weiter — bei Zellgroesse 1 sind das genau 2.0 Weltenheiten.
+  tweens[0].update(tweens[0].dur * 0.5);
+  assert.ok(cube.mesh.position.x > 0 && cube.mesh.position.x < 2,
+    'unterwegs: ' + cube.mesh.position.x);
+  assert.deepEqual(geblitzt, [], 'der Blockierer blitzt erst beim Aufprall');
+  tweens[0].finish();
+  assert.ok(Math.abs(cube.mesh.position.x - 2) < 1e-6, 'Anlauf endet vor der Sperre');
+  assert.deepEqual(geblitzt, [3], 'der Blockierer blitzt im Moment des Aufpralls');
+
+  // Rueckkehr: exakt auf das Startfeld, und der Stein ist wieder frei.
+  tweens[1].update(tweens[1].dur * 0.5);
+  assert.ok(cube.mesh.position.x > 0, 'kehrt noch zurueck');
+  tweens[1].finish();
+  assert.ok(Math.abs(cube.mesh.position.x) < 1e-9, 'kehrt exakt auf das Startfeld zurueck');
+  assert.equal(cube.busy, false);
+});
+
+test('ein direkt blockierter Stein bekommt einen Stups, kein Durchdringen', { skip }, () => {
+  // Steht der Blockierer unmittelbar daneben, gibt es keine Anlaufstrecke. Der Stups
+  // darf hoechstens den Spalt zwischen zwei Steinen ueberbruecken (CELL - CUBE_EDGE),
+  // sonst schoebe sich der Stein sichtbar in seinen Blockierer hinein.
+  const { cube, sicht } = baueSicht(1.0);
+  const move = { kind: 'INVALID', reason: 'BLOCKED', cubeId: 0, from: 0, to: -1,
+    path: [0], blocker: [1] };
+  const tweens = render.buildTweens(sicht, { W: 6, H: 3, D: 3 }, move, {});
+  tweens[0].finish();
+  const spalt = 1.0 - 0.92;                    // CELL - CUBE_EDGE
+  assert.ok(cube.mesh.position.x > 0, 'der Stups ist sichtbar');
+  assert.ok(cube.mesh.position.x <= spalt + 1e-9,
+    'der Stups dringt in den Blockierer ein: ' + cube.mesh.position.x);
+  tweens[1].finish();
+  assert.ok(Math.abs(cube.mesh.position.x) < 1e-9);
+});
+
+test('ein toter Tipp animiert nichts Sichtbares und gibt den Stein frei', { skip }, () => {
+  const { cube, geblitzt, sicht } = baueSicht(1.0);
+  const move = { kind: 'INVALID', reason: 'DEAD', cubeId: 0, from: 0, to: -1,
+    path: [0], blocker: [] };
+  const tweens = render.buildTweens(sicht, { W: 6, H: 3, D: 3 }, move, {});
+  for (const t of tweens) t.finish();
+  assert.deepEqual(geblitzt, [], 'ohne Blockierer blitzt nichts');
+  assert.ok(Math.abs(cube.mesh.position.x) < 1e-9);
+  assert.equal(cube.busy, false);
 });

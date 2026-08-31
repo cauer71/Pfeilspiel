@@ -8,7 +8,7 @@
 //   * three wird als CommonJS-Fassung (build/three.cjs, ohne jede require-Abhaengigkeit)
 //     in eine Funktion gekapselt und liefert das Objekt THREE. Damit braucht die
 //     Einzeldatei weder Importmap noch CDN und laesst sich vollstaendig offline pruefen;
-//   * OrbitControls und RoomEnvironment werden von ES-Modul auf denselben
+//   * TrackballControls und RoomEnvironment werden von ES-Modul auf denselben
 //     Geltungsbereich umgeschrieben (import -> Destrukturierung aus THREE);
 //   * die sieben Spielmodule werden in Abhaengigkeitsreihenfolge verkettet; ihre
 //     Importe untereinander entfallen, weil alle Namen im selben Geltungsbereich liegen.
@@ -81,7 +81,7 @@ function addonUmschreiben(pfad) {
 }
 
 const addons = [
-  'node_modules/three/examples/jsm/controls/OrbitControls.js',
+  'node_modules/three/examples/jsm/controls/TrackballControls.js',
   'node_modules/three/examples/jsm/environments/RoomEnvironment.js',
 ].map(addonUmschreiben).join('\n\n');
 

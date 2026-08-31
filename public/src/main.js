@@ -228,11 +228,18 @@ export async function boot() {
   });
 
   const resizeAb = attachResize(renderer, camera, stage, () => {
-    // Refit ohne Blickwinkelverlust: der Spherical-Tween behaelt phi und theta.
+    // TrackballControls rechnet in Bildschirmkoordinaten und merkt sich die Flaeche
+    // des Canvas. Ohne handleResize() nach jeder Groessenaenderung dreht der Turm
+    // schief oder gar nicht mehr.
+    controls.handleResize();
+    // Refit ohne Blickwinkelverlust: getweent wird nur die Distanz.
     dist = fitCamera(camera, controls, level.dims, 1.0, 1.15, hudAnteil(),
       { anim, durMs: 0 });
     anfordern();
   });
+
+  /** Rundungsfehler koennen |v| minimal ueber 1 treiben; asin lieferte dann NaN. */
+  function clampEins(v) { return v < -1 ? -1 : (v > 1 ? 1 : v); }
 
   // --- HUD-Anteil des Bildschirms --------------------------------------
   function hudAnteil() {
@@ -574,6 +581,14 @@ export async function boot() {
     zug: (cell) => spielZug(cell),
     get beschaeftigt() { return anim.busy; },
     legaleZellen: () => legalCells(board, session.state),
+    /** Lesende Kamerakennzahlen fuer den E2E-Lauf: Hoehenwinkel und Rollen. */
+    kamera: () => ({
+      hoehenwinkelGrad: Math.round(Math.asin(clampEins(
+        (camera.position.y - controls.target.y)
+        / Math.max(1e-6, camera.position.distanceTo(controls.target))
+      )) * 180 / Math.PI),
+      obenY: Math.round(camera.up.y * 1000) / 1000
+    }),
     /**
      * Welche Zelle meldet der ECHTE Zeigerstrahl an dieser Bildschirmstelle? Und wo
      * liegt eine Zelle auf dem Bildschirm? Beides nur lesend, fuer den E2E-Lauf: nur

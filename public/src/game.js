@@ -477,10 +477,22 @@ function bahn(step, anker, d, n) {
   return res;
 }
 
-function ungueltig(reason, id, from, blocker) {
+/**
+ * @param {string} reason
+ * @param {number} id
+ * @param {number} from
+ * @param {number[]} [blocker]
+ * @param {number[]} [frei] Die Ankerzellen, die der Stein bis zum Blockierer noch
+ *        durchlaufen koennte, einschliesslich der Startzelle. Die Regel wird davon nicht
+ *        beruehrt — der Stein bleibt stehen —, aber die Darstellung braucht die Strecke,
+ *        um ihn sichtbar gegen sein Hindernis prallen und zurueckfedern zu lassen
+ *        (SPEC §1.3 RF-3, §8.9). Ohne Angabe bleibt es bei der Startzelle allein.
+ */
+function ungueltig(reason, id, from, blocker, frei) {
   return {
     kind: 'INVALID', reason, cubeId: id === undefined ? EMPTY : id, from, to: OUT,
-    path: [from], blocker: Array.isArray(blocker) ? blocker.filter((c) => c !== OUT) : []
+    path: (Array.isArray(frei) && frei.length > 0) ? frei : [from],
+    blocker: Array.isArray(blocker) ? blocker.filter((c) => c !== OUT) : []
   };
 }
 
@@ -511,7 +523,9 @@ export function resolveMove(board, state, cell) {
     const ziel = vorruecken(st, lauf, d);
     const blocker = besetzteVon(state, ziel, id);
     if (blocker.length > 0)                    // RF-3: irgendwo auf der Bahn steht etwas
-      return ungueltig('BLOCKED', id, anker, blocker);
+      // `schritte` zaehlt hier die bereits als frei erkannten Schritte. Die Bahn dorthin
+      // ist die Strecke, die der Stein anlaufen kann, bevor er auf den Blockierer trifft.
+      return ungueltig('BLOCKED', id, anker, blocker, bahn(st, anker, d, schritte));
 
     schritte++;
     if (enthaeltAus(ziel))                     // RF-1/RF-2: der Stein verlaesst das Gitter

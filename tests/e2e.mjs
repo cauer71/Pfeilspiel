@@ -300,6 +300,41 @@ try {
   }
   pruefe(langWeg, 'Ein echter Klick auf einen 2x1-Stein entfernt ihn');
 
+  // --- Drehen um alle drei Achsen -----------------------------------------
+  // OrbitControls klemmte den Polarwinkel hart: ueber den Scheitel kam man nie. Mit
+  // TrackballControls darf der Turm ueberkopf stehen und rollen (SPEC §8.4).
+  const kamVor = await page.evaluate(() => globalThis.__pfeilspiel.kamera());
+  const kbox = await page.locator('#ps-canvas').boundingBox();
+  const kx = kbox.x + kbox.width / 2, ky = kbox.y + kbox.height / 2;
+
+  await page.mouse.move(kx, ky + 200);
+  await page.mouse.down();
+  for (let i = 1; i <= 40; i++) await page.mouse.move(kx, ky + 200 - i * 12);
+  await page.mouse.up();
+  await page.waitForTimeout(1200);
+  const kamUeber = await page.evaluate(() => globalThis.__pfeilspiel.kamera());
+  pruefe(kamUeber.hoehenwinkelGrad < -20,
+    `Senkrechtes Ziehen fuehrt ueber den Scheitel hinweg (${kamVor.hoehenwinkelGrad}° -> ${kamUeber.hoehenwinkelGrad}°)`);
+  pruefe(kamUeber.obenY < 0,
+    `Der Turm darf ueberkopf stehen (camera.up.y = ${kamUeber.obenY})`);
+  await page.screenshot({ path: join(AUS, 'drehung-ueberkopf.png') });
+
+  // Rollen: waagrecht ziehen weit ausserhalb der Bildmitte.
+  await page.mouse.move(kx + 500, ky - 350);
+  await page.mouse.down();
+  for (let i = 1; i <= 30; i++) await page.mouse.move(kx + 500 - i * 20, ky - 350);
+  await page.mouse.up();
+  await page.waitForTimeout(1200);
+  const kamRoll = await page.evaluate(() => globalThis.__pfeilspiel.kamera());
+  pruefe(Math.abs(kamRoll.obenY) < 0.98,
+    `Rollen kippt die Aufrechte (camera.up.y = ${kamRoll.obenY})`);
+
+  // Nach alldem muss das Spiel noch spielbar sein.
+  const nachDrehen = await page.evaluate(() => globalThis.__pfeilspiel.legaleZellen().length);
+  pruefe(nachDrehen > 0, `Nach freiem Drehen gibt es weiter gueltige Zuege (${nachDrehen})`);
+  await page.click('#ps-btn-restart');
+  await page.waitForTimeout(700);
+
   // --- Zielmodus BEFREIUNG -------------------------------------------------
   await page.evaluate(() => {
     const el = document.getElementById('ps-goal');

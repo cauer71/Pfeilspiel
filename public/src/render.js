@@ -1,11 +1,11 @@
 // Pfeilspiel — Three.js-Renderschicht (SPEC §4.3, §8).
-// Renderer, Szenengraph, Kamera, OrbitControls, prozeduraler Pfeilatlas,
+// Renderer, Szenengraph, Kamera, Kamerasteuerung, prozeduraler Pfeilatlas,
 // UV-Variantengeometrien, Sichtbarkeit, Picking, Tweens.
 // Geteilte Materialien werden hier NIE mutiert (SPEC §0.6): Hover, Selektion,
 // Roentgen und Ausblenden laufen ausschliesslich ueber Materialvarianten.
 
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CELL, CUBE_EDGE, OUT, DIR6, worldPosOf, dirWorldOf, latticeOf } from './game.js';
 
@@ -232,35 +232,59 @@ export function createCamera(aspect) {
 }
 
 /**
- * OrbitControls nach SPEC §8.4.
+ * Kamerasteuerung nach SPEC §8.3/§8.4: frei um alle drei Achsen.
  * @param {THREE.PerspectiveCamera} camera
  * @param {HTMLCanvasElement} canvas
- * @param {{minPolarDeg?:number, maxPolarDeg?:number}} [opts]
+ * @param {{rotateSpeed?:number, dampingFactor?:number}} [opts]
  */
 export function createControls(camera, canvas, opts = {}) {
-  const controls = new OrbitControls(camera, canvas);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.enablePan = false;
-  controls.rotateSpeed = 0.85;
-  controls.zoomSpeed = 0.9;
-  controls.zoomToCursor = false;
-  controls.minPolarAngle = THREE.MathUtils.degToRad(
-    typeof opts.minPolarDeg === 'number' ? opts.minPolarDeg : 18);
-  controls.maxPolarAngle = THREE.MathUtils.degToRad(
-    typeof opts.maxPolarDeg === 'number' ? opts.maxPolarDeg : 102);
+  // TrackballControls statt OrbitControls: der Turm soll sich um ALLE DREI Achsen
+  // frei drehen lassen, auch ueber den Scheitel hinweg und mit Rollen. OrbitControls
+  // haelt `up` fest und klemmt den Polarwinkel hart auf (0, PI) — man kommt dort nie
+  // ueber den Turm hinweg, egal wie die Grenzen gesetzt sind. Trackball dreht um die
+  // zur Zugrichtung senkrechte Achse im Bildschirmraum und fuehrt `camera.up` mit;
+  // damit gibt es keinen Pol und keine Sperre (SPEC §8.3).
+  const controls = new TrackballControls(camera, canvas);
+  controls.rotateSpeed = typeof opts.rotateSpeed === 'number' ? opts.rotateSpeed : 3.0;
+  controls.zoomSpeed = 1.1;
+  controls.noPan = true;                 // der Turm bleibt in der Bildmitte
+  controls.staticMoving = false;         // Nachlauf wie bisher das Damping
+  controls.dynamicDampingFactor =
+    typeof opts.dampingFactor === 'number' ? opts.dampingFactor : 0.16;
   controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE
   };
-  // enablePan = false laesst DOLLY_PAN zu reinem Pinch-Dolly entarten.
-  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+  controls.keys = [];                    // keine Tastenkuerzel: das Spiel benutzt sie selbst
+
+  // Trackball rechnet in Bildschirmkoordinaten und merkt sich die Canvasflaeche.
+  // Ohne handleResize() nach jeder Groessenaenderung dreht der Turm schief.
+  controls.handleResize();
+
+  // OrbitControls.update(dt) meldete per Rueckgabewert, ob sich die Kamera bewegt hat;
+  // die Zeichenschleife haengt daran. Trackball liefert nichts, also wird es hier
+  // gemessen — Position UND Ausrichtung, denn beim Rollen bleibt die Position gleich.
+  const letztePos = new THREE.Vector3();
+  const letzteQuat = new THREE.Quaternion();
+  let ersterLauf = true;
+  const nativeUpdate = controls.update.bind(controls);
+  controls.update = function () {
+    nativeUpdate();
+    const bewegt = ersterLauf
+      || letztePos.distanceToSquared(camera.position) > 1e-10
+      || Math.abs(letzteQuat.dot(camera.quaternion)) < 1 - 1e-10;
+    ersterLauf = false;
+    letztePos.copy(camera.position);
+    letzteQuat.copy(camera.quaternion);
+    return bewegt;
+  };
+
   return controls;
 }
 
 /**
  * Gieren-invariantes Framing (SPEC §8.3).
  * @param {THREE.PerspectiveCamera} camera
- * @param {OrbitControls} controls
+ * @param {TrackballControls} controls
  * @param {{W:number,H:number,D:number}} dims
  * @param {number} [cell]
  * @param {number} [margin]
@@ -293,24 +317,24 @@ export function fitCamera(camera, controls, dims, cell = CELL, margin = 1.15, hu
   const anim = opts && opts.anim;
   if (anim && typeof anim.play === 'function') {
     // Laufendes Spiel: 500-ms-Tween, Blickrichtung bleibt stehen.
+    // Nur die DISTANZ wird getweent, die Blickrichtung bleibt exakt stehen. Sie wird
+    // als Richtungsvektor gefuehrt, nicht als Kugelkoordinate: seit der Turm sich frei
+    // um alle drei Achsen dreht, gibt es Lagen (senkrecht von oben, ueberkopf), die
+    // phi/theta nicht eindeutig beschreiben — und `camera.up` erst recht nicht.
     const startTarget = controls.target.clone();
     const endTarget = new THREE.Vector3(0, targetY, 0);
-    const sph = new THREE.Spherical().setFromVector3(
-      camera.position.clone().sub(startTarget));
-    const startR = sph.radius;
-    const phi = clamp(sph.phi, controls.minPolarAngle, controls.maxPolarAngle);
-    const theta = sph.theta;
+    const blick = camera.position.clone().sub(startTarget);
+    const startR = Math.max(1e-6, blick.length());
+    const richtung = blick.divideScalar(startR);
+    const oben = camera.up.clone();
     const dur = (opts && typeof opts.durMs === 'number') ? opts.durMs : 500;
     const ease = (opts && typeof opts.ease === 'function') ? opts.ease : Ease.inOutCubic;
     const wasEnabled = controls.enabled;
     controls.enabled = false;
-    const tmp = new THREE.Spherical();
-    const pos = new THREE.Vector3();
     anim.play(new Tween(dur, ease, (e) => {
-      tmp.set(startR + (dist - startR) * e, phi, theta);
-      pos.setFromSpherical(tmp);
       controls.target.lerpVectors(startTarget, endTarget, e);
-      camera.position.copy(controls.target).add(pos);
+      camera.position.copy(controls.target).addScaledVector(richtung, startR + (dist - startR) * e);
+      camera.up.copy(oben);
       camera.lookAt(controls.target);
     }, () => {
       controls.enabled = wasEnabled;
@@ -320,6 +344,7 @@ export function fitCamera(camera, controls, dims, cell = CELL, margin = 1.15, hu
   }
 
   controls.target.set(0, targetY, 0);
+  camera.up.set(0, 1, 0);            // Erstaufstellung immer aufrecht
   camera.position
     .setFromSpherical(new THREE.Spherical(dist, THREE.MathUtils.degToRad(62), THREE.MathUtils.degToRad(35)))
     .add(controls.target);
@@ -1648,21 +1673,37 @@ export function buildTweens(view, board, move, skin) {
   const versatz = cube.offset || new THREE.Vector3(0, 0, 0);
   const pos = (cell) => view.worldOf(cell).add(versatz);
 
-  // --- Ungueltig: Wackeln entlang der Pfeilrichtung + rotes Aufblitzen ---
+  // --- Ungueltig: Anlauf bis ans Hindernis, Anprall, Rueckkehr ------------
+  // Die Regel bleibt unberuehrt (der Stein steht am Ende wieder auf seinem Feld), aber
+  // man muss SEHEN, warum nichts passiert: der Stein laeuft die freie Strecke an, prallt
+  // gegen seinen Blockierer und federt zurueck. `move.path` nennt genau diese Strecke
+  // (SPEC §1.3 RF-3). Steht der Blockierer direkt daneben, bleibt nur ein kurzer Stups.
   if (move.kind === 'INVALID') {
     const d = view.dirVectorOf(move.from, cube.dir).normalize();
     const base = pos(move.from);
-    const amp = mo.wobble.amp * CELL;
+    const zellen = Math.max(0, (move.path ? move.path.length : 1) - 1);
+    // Bei direktem Nachbarn genau bis an dessen Flaeche: der Spalt zwischen zwei Steinen
+    // ist CELL - CUBE_EDGE. Mehr waere ein Durchdringen, weniger saehe nach nichts aus.
+    const strecke = zellen > 0 ? zellen * CELL : (CELL - CUBE_EDGE) * 0.75;
+    const anlaufDur = Math.min(260, 90 + 45 * Math.max(1, zellen));
+    const rueckDur = Math.round(anlaufDur * 1.25) + 60;
+    const nachhall = mo.wobble.amp * CELL * 0.5;
     const cycles = mo.wobble.cycles;
-    const ease = easeOf(mo.wobble.ease);
-    let flashed = false;
-    items.push(new Tween(mo.wobble.dur, ease, (e, t) => {
-      if (!flashed) {
-        flashed = true;
-        if (move.blocker && move.blocker.length) view.flashBlocker(move.blocker[0]);
-      }
-      const off = amp * Math.sin(2 * Math.PI * cycles * t) * (1 - e);
-      mesh.position.copy(base).addScaledVector(d, off);
+    const zurueckEase = easeOf(mo.wobble.ease);
+
+    // 1. Anlauf: beschleunigt in die Sperre hinein.
+    items.push(new Tween(anlaufDur, Ease.inQuad, (e) => {
+      mesh.position.copy(base).addScaledVector(d, strecke * e);
+      mesh.updateMatrix();
+    }, () => {
+      // Der Blockierer blitzt im Moment des Aufpralls auf, nicht schon beim Antippen.
+      if (move.blocker && move.blocker.length) view.flashBlocker(move.blocker[0]);
+    }));
+
+    // 2. Rueckkehr mit abklingendem Nachzittern.
+    items.push(new Tween(rueckDur, zurueckEase, (e, t) => {
+      const zittern = nachhall * Math.sin(2 * Math.PI * cycles * t) * (1 - t);
+      mesh.position.copy(base).addScaledVector(d, strecke * (1 - e) + zittern);
       mesh.updateMatrix();
     }, () => {
       mesh.position.copy(base);

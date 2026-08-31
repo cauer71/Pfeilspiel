@@ -99,7 +99,7 @@ Blockierer selbst gegangen ist. Genau darin besteht das Spiel: die richtige Reih
 |---|---|---|
 | RF-1 | `Z+1` enthaelt `OUT`, die uebrigen Zellen sind frei | `EXIT`. Grenze vor Belegung: die Belegung ausserhalb wird nie geprueft, es gibt sie nicht. `path` ist dann nur die Startzelle. |
 | RF-2 | Die ganze Bahn ist frei | `EXIT`. `path` nennt jede durchlaufene Ankerzelle, die Startzelle eingeschlossen, und endet an der letzten Zelle vor dem Rand. |
-| RF-3 | Irgendeine Zelle der Bahn ist von einem fremden Stein besetzt | `INVALID` (`reason:'BLOCKED'`). `blocker` nennt **genau die zuerst getroffenen** Blockierzellen — nicht alle auf der Bahn. |
+| RF-3 | Irgendeine Zelle der Bahn ist von einem fremden Stein besetzt | `INVALID` (`reason:'BLOCKED'`). `blocker` nennt **genau die zuerst getroffenen** Blockierzellen — nicht alle auf der Bahn. `path` nennt die **freie Anlaufstrecke**: Startzelle plus jede freie Ankerzelle bis unmittelbar vor den Blockierer. Sie ist reine Darstellung (§8.9), der Zustand aendert sich nicht. |
 | RF-4 | Stein bereits ausgeschieden (`alive == 0`), leere Zelle oder entarteter Zellindex | `INVALID` (`reason:'DEAD'`), `blocker` leer. |
 | RF-5 | „ausserhalb“ heisst **ausserhalb des Quaders**: `step` liefert `OUT`. Es gibt keine Flaechen und keine Nachbarwaende mehr, an denen eine Bahn enden koennte. | `path` und `blocker` liegen stets auf demselben Strahl in Richtung `d`. |
 | RF-6 | Ein gueltiger Zug entfernt **genau einen** Stein. Alle uebrigen bleiben unberuehrt. | Undo ist deshalb exakt invers und O(1). |
@@ -318,16 +318,24 @@ aufsteigend sortierbar, und der Zeugenzug nennt stets den Anker.
  * @property {number} cubeId
  * @property {number} from            Ankerzelle des Starts
  * @property {number} to              stets OUT(-1): ein Zug endet ausserhalb oder gar nicht
- * @property {number[]} path          [from, ...durchlaufene Ankerzellen]; endet auf der
- *                                    letzten Zelle IM Gitter (der Flug nach aussen wird aus
- *                                    dirWorld[from] gerendert)
+ * @property {number[]} path          [from, ...durchlaufene Ankerzellen]. Bei EXIT endet er
+ *                                    auf der letzten Zelle IM Gitter (der Flug nach aussen
+ *                                    wird aus dirWorld[from] gerendert). Bei INVALID/BLOCKED
+ *                                    ist es die freie Anlaufstrecke bis vor den Blockierer,
+ *                                    bei INVALID/DEAD nur [from].
  * @property {number[]} blocker       die zuerst getroffenen besetzten Zellen; bei EXIT leer
  */
 ```
 
-`INVALID` liefert `{kind:'INVALID', reason, cubeId, from, to:OUT, path:[from], blocker}`.
+`INVALID` liefert `{kind:'INVALID', reason, cubeId, from, to:OUT, path, blocker}`.
 Bei `reason:'BLOCKED'` nennt `blocker` genau die zuerst getroffenen Zellen — sie werden rot
-aufblitzen gelassen. Bei `reason:'DEAD'` ist `blocker` leer.
+aufblitzen gelassen — und `path` die freie Anlaufstrecke. Bei `reason:'DEAD'` ist `blocker` leer
+und `path` gleich `[from]`.
+
+**`path` bei BLOCKED aendert die Regel nicht.** Der Stein bleibt stehen, `to` ist `OUT`, und
+`applyMove` tut nichts. Die Strecke steht nur da, damit die Darstellung ihn sichtbar gegen sein
+Hindernis prallen und zurueckfedern lassen kann (§8.9): ein Stein, der sich gar nicht ruehrt,
+sieht aus wie ein verschluckter Tipp, nicht wie ein blockierter Zug.
 
 ### 3.4 Undo
 
@@ -582,7 +590,8 @@ export function createScene(renderer): {
   lights: {hemi, key, fill}
 };
 export function createCamera(aspect: number): THREE.PerspectiveCamera;   // fov 45
-export function createControls(camera, canvas, opts?: {minPolarDeg?, maxPolarDeg?}): OrbitControls;
+export function createControls(camera, canvas, opts?: {rotateSpeed?, dampingFactor?}): TrackballControls;
+//   controls.update() liefert hier BOOLEAN (bewegt sich die Kamera?), siehe §8.4
 export function fitCamera(camera, controls, dims: {W,H,D}, cell?: number,
                           margin?: number, hudFraction?: number): number;   // liefert dist
 export function updateKeyLight(key, camera, controls, dist: number): void;
@@ -637,7 +646,7 @@ export function createPointerInput(opts: {
   onHover?: (cell:number|null) => void,
   onLongPress?: (down:boolean) => void,
   onActivity?: () => void,
-  controls?: OrbitControls,        // fuer Daempfungs-Verwurf und Refit-Ausnahme, §8.7
+  controls?: TrackballControls,    // fuer Daempfungs-Verwurf und Refit-Ausnahme, §8.7
   thresholds?: {moveMouse?:5, moveTouch?:12, maxMs?:600}
 }): {update(): void, pickAt(x:number, y:number, spread?:number): object|null, dispose(): void};
 ```
@@ -796,7 +805,8 @@ export function resolveMove(board, state, cell) {
     const ziel    = vorruecken(st, lauf, d);
     const blocker = besetzteVon(state, ziel, id);                  // fremde Steine only
     if (blocker.length > 0)                                        // R2 / RF-3
-      return ungueltig('BLOCKED', id, anker, blocker);
+      // `schritte` zaehlt die bereits freien Schritte: die Anlaufstrecke fuer §8.9.
+      return ungueltig('BLOCKED', id, anker, blocker, bahn(st, anker, d, schritte));
     schritte++;
     if (enthaeltAus(ziel))                                         // R1 / RF-1, RF-2
       return { kind:'EXIT', cubeId:id, from:anker, to:OUT,
@@ -1589,7 +1599,7 @@ gebaut. Ein einziges, immer vorhandenes Overlay:
   `filter: drop-shadow()` auf dem Canvas (Vollbild-Blur pro Frame). `canvasFilter` darf nur
   `saturate`/`contrast` enthalten.
 * **Screenshake wirkt auf `worldRig.position`**, nie auf die Kamera und nie als CSS-Transform auf
-  dem Canvas. OrbitControls besitzt `camera.position`; ein CSS-Transform wuerde ausserdem die
+  dem Canvas. Die Kamerasteuerung besitzt `camera.position`; ein CSS-Transform wuerde ausserdem die
   NDC-Berechnung des Raycasts verschieben und Tipps auf falsche Wuerfel lenken.
 * Der Pixelfont-Look entsteht ueber `--ps-font-ui: ui-monospace`, `--ps-transform: uppercase`,
   `--ps-tracking: .12em` und `--ps-text-shadow`. Es wird **kein** `@font-face` geladen und kein
@@ -1628,7 +1638,7 @@ Worker. Das entfernt den Third-Party-SPOF und den Abfluss der Spieler-IP an ein 
 ```
 public/vendor/three/0.185.1/build/three.module.min.js
 public/vendor/three/0.185.1/build/three.core.min.js        (relativ nachgeladen, MUSS existieren)
-public/vendor/three/0.185.1/examples/jsm/controls/OrbitControls.js
+public/vendor/three/0.185.1/examples/jsm/controls/TrackballControls.js
 public/vendor/three/0.185.1/examples/jsm/environments/RoomEnvironment.js
 ```
 
@@ -1647,7 +1657,7 @@ Bezugsquelle fuer das Vendoring (nur zum Kopieren, nicht zur Laufzeit):
 ```
 https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.module.min.js
 https://cdn.jsdelivr.net/npm/three@0.185.1/build/three.core.min.js
-https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/controls/OrbitControls.js
+https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/controls/TrackballControls.js
 https://cdn.jsdelivr.net/npm/three@0.185.1/examples/jsm/environments/RoomEnvironment.js
 ```
 
@@ -1714,20 +1724,39 @@ hebt `controls.target.y` an, damit der Turm in der freien Flaeche zentriert blei
 `fitCamera` laeuft bei Resize, Levelstart und Modus-/Groessenwechsel. Bei laufendem Spiel als
 500-ms-`Spherical`-Tween mit `controls.enabled = false` waehrend der Bewegung.
 
-### 8.4 OrbitControls
+### 8.4 Kamerasteuerung: frei um alle drei Achsen
 
 ```js
-controls.enableDamping = true;  controls.dampingFactor = 0.08;
-controls.enablePan     = false;                       // Turm bleibt zentriert
-controls.rotateSpeed   = 0.85;  controls.zoomSpeed = 0.9;  controls.zoomToCursor = false;
-controls.minPolarAngle = degToRad(18);   controls.maxPolarAngle = degToRad(102);
+const controls = new TrackballControls(camera, canvas);
+controls.rotateSpeed = 3.0;   controls.zoomSpeed = 1.1;
+controls.noPan = true;                                  // Turm bleibt zentriert
+controls.staticMoving = false;  controls.dynamicDampingFactor = 0.16;
 controls.mouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE };
-controls.touches      = { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN };
+controls.keys = [];                                     // das Spiel benutzt die Tasten selbst
+controls.handleResize();                                // und nach JEDER Groessenaenderung
 ```
 
-Mit `enablePan = false` degeneriert `TOUCH.DOLLY_PAN` zu reinem Pinch-Dolly — genau das gewuenschte
-Verhalten, ohne eigene Touch-Behandlung. `minPolarAngle = 18°` verhindert das Ueberklappen am Pol;
-`102°` erlaubt den Blick leicht von unten.
+**Warum nicht OrbitControls.** Der Turm MUSS sich um alle drei Achsen voll drehen lassen —
+seitlich herum, ueber den Scheitel hinweg und rollend. OrbitControls fuehrt die Kamera in
+Kugelkoordinaten um eine feste `up`-Achse und klemmt den Polarwinkel hart in `(0, π)`: am Pol ist
+Schluss, unabhaengig davon, wie `minPolarAngle`/`maxPolarAngle` gesetzt sind, und Rollen kennt es
+gar nicht. TrackballControls dreht stattdessen um die zur Zuggeste senkrechte Achse im
+Bildschirmraum und fuehrt `camera.up` mit. Damit gibt es keinen Pol, keine Sperre und keine
+ausgezeichnete Richtung.
+
+Zwei Folgen, die im Code stehen muessen:
+
+* `TrackballControls.update()` liefert **nichts**. Die Zeichenschleife braucht aber die Auskunft,
+  ob sich die Kamera bewegt hat. `createControls` legt deshalb einen Mantel darum, der Position
+  **und** Ausrichtung mit dem letzten Bild vergleicht — beim reinen Rollen bleibt die Position
+  gleich und nur das Quaternion aendert sich.
+* Trackball rechnet in Bildschirmkoordinaten und merkt sich die Canvasflaeche. Ohne
+  `handleResize()` nach jeder Groessenaenderung dreht der Turm schief. Der Resize-Pfad ruft es auf.
+
+Der Refit (`fitCamera` mit `anim`) tweent daher nur noch die **Distanz** und fuehrt die
+Blickrichtung als Richtungsvektor mit, nicht als `phi`/`theta`: seit der Turm ueberkopf stehen
+kann, beschreiben Kugelkoordinaten die Lage nicht mehr eindeutig, und `camera.up` schon gar nicht.
+Nur die Erstaufstellung setzt `camera.up` wieder auf `(0,1,0)`.
 
 **Renderloop mit On-Demand-Rendering:**
 
@@ -1933,7 +1962,7 @@ Dicke-Finger-Fallback auf Touch: trifft der zentrale Strahl nichts, vier Zusatzs
 **Tap gegen Drag — normativ:**
 
 * **Kein `click`-Event.** Nur Pointer Events.
-* OrbitControls setzt selbst `canvas.style.touchAction = 'none'` und ruft `setPointerCapture`.
+* Die Kamerasteuerung setzt selbst `canvas.style.touchAction = 'none'` und ruft `setPointerCapture`.
   Alle eigenen Listener MUESSEN `{passive:true}` sein; `preventDefault()` ist verboten.
   `pointermove`/`pointerup`/`pointercancel` gehoeren an `window`, `pointerdown` ans Canvas.
 * Schwellen: Bewegung > **5 px** (Maus) bzw. **12 px** (Touch), gemessen **einmal absolut gegen
@@ -1991,8 +2020,8 @@ Tabelle nennt die Modern-Referenz.
 | **Sprung** (je Glied) | 260 ms | horizontal `inOutCubic`, Bogen `4t(1-t)` mit **rohem** `t` | Bogenhoehe `arc * CELL`, zusaetzlich ±12° Kippen um `dir × up`, bei `t = 1` wieder 0 |
 | **Kettenpause** | 45 ms | – | zwischen zwei Sprungglieder, damit die Kette zaehlbar bleibt |
 | **Wegfliegen** | 420 ms | Position `inQuad`, Scale `outCubic` 1→0.55, Alpha linear ab `t = 0.35` | plus Zufalls-Spin ≈1.5 Umdrehungen |
-| **Wackeln** (ungueltig) | 260 ms | gedaempfter Sinus | `amp * CELL * sin(2π·cycles·t) * (1-t)` **entlang der Pfeilrichtung**, dazu 220 ms rotes Aufblitzen von `move.blocker[0]` |
-| **Kamera-Refit** | 500 ms | `inOutCubic` | `Spherical`-Lerp, `controls.enabled = false` |
+| **Anprall** (ungueltig) | Anlauf `min(260, 90 + 45·Zellen)` ms, Rueckkehr `round(1.25·Anlauf) + 60` ms | Anlauf `inQuad`, Rueckkehr `skin.wobble.ease` | Zwei Tweens in Folge **entlang der Pfeilrichtung**: der Stein laeuft die freie Strecke aus `move.path` an, im Moment des Aufpralls blitzt `move.blocker[0]` rot auf, danach federt er mit abklingendem Sinus (`0.5·amp·CELL`) auf sein Feld zurueck. Steht der Blockierer unmittelbar daneben, ist die Strecke `0.75·(CELL − CUBE_EDGE)` — hoechstens der Spalt zwischen zwei Steinen, sonst schoebe sich der Stein sichtbar in seinen Blockierer |
+| **Kamera-Refit** | 500 ms | `inOutCubic` | nur die Distanz, Blickrichtung als Vektor; `controls.enabled = false` (§8.4) |
 | **Vorschau** | 120 ms Einblenden | `outCubic` | Geisterspur entlang `move.path` |
 
 Eine 3er-Kette dauert `3·260 + 2·45 = 870 ms` und bleibt damit unter der Sekunde. Der Schritt ist
@@ -2377,7 +2406,7 @@ netzunabhaengige HTML-Datei (`dist/pfeilspiel.html`), erzeugt ueber
   Ladepfads der Cloudflare-Fassung werden.
 * **Verfahren:** die drei Stylesheets als `<style>`, der Koerper aus `public/index.html`
   unveraendert; `three` als gekapselte CommonJS-Fassung (`node_modules/three/build/three.cjs`,
-  ohne jedes `require`) hinter einer Funktion, die das Objekt `THREE` liefert; `OrbitControls`
+  ohne jedes `require`) hinter einer Funktion, die das Objekt `THREE` liefert; `TrackballControls`
   und `RoomEnvironment` von ES-Modul auf denselben Geltungsbereich umgeschrieben
   (`import` → Destrukturierung aus `THREE`); die sieben Spielmodule in
   Abhaengigkeitsreihenfolge verkettet, ihre gegenseitigen Importe entfallen.
@@ -2613,8 +2642,14 @@ tatsaechlich auf der serialisierten Beschreibung arbeitet und nicht auf dem Gene
 ### 10.9 `tests/render.test.js` und `tests/ui.test.js` — Eingabe und Overlaystapel
 
 `render.test.js` prueft ausschliesslich `createPointerInput` (§8.7) gegen einen winzigen
-Ereignisverteiler, eine `OrbitControls`-Attrappe und eine einzige antippbare Zelle. Laesst sich
+Ereignisverteiler, eine Steuerungsattrappe und eine einzige antippbare Zelle. Laesst sich
 `three` nicht aufloesen, meldet sich die Datei als **uebersprungen**, nicht als rot.
+
+Dazu die **Anprallanimation** (§8.9) gegen eine Turmansicht-Attrappe: `buildTweens` liefert bei
+`INVALID` genau zwei Tweens; nach dem ersten steht der Stein unmittelbar vor dem Blockierer und
+dieser hat **genau dann** aufgeblitzt (nicht schon beim Antippen), nach dem zweiten steht er exakt
+wieder auf seinem Feld und `cube.busy` ist `false`. Ein direkt blockierter Stein darf dabei
+hoechstens `CELL − CUBE_EDGE` vorruecken; mehr waere ein sichtbares Durchdringen.
 
 1. Sauberer Tap ohne Kamerabewegung loest `onTap` aus.
 2. Wischen ueber die Touch-Schwelle loest keinen Tap aus.
@@ -2680,7 +2715,7 @@ Erzeugnis aus §9.8 und der Testlauf selbst.
    sichert nicht die Frische einer fremden Datei zu, sondern dass ein Neubau jederzeit den
    aktuellen Quellstand liefert.
 2. Das Erzeugnis traegt keine unaufgeloeste `import`-/`export`-Zeile und kein CSS-`@import`;
-   `three` steckt eingebettet (`THREE`-Kapsel, `OrbitControls`, `RoomEnvironment`, kein
+   `three` steckt eingebettet (`THREE`-Kapsel, `TrackballControls`, `RoomEnvironment`, kein
    `require`); es wird nichts nachgeladen (kein Skriptverweis, keine Importmap, kein
    `vendor/`-Pfad).
 3. Alle sieben Spielmodule sind eingesetzt, die Modulmenge deckt sich **exakt** mit
