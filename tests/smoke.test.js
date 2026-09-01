@@ -21,6 +21,7 @@ import { levelSpecFor, generateLevel, verifyLevel } from '../public/src/levels.j
 
 const QUELLE = {
   game: '../public/src/game.js',
+  figuren: '../public/src/figuren.js',
   levels: '../public/src/levels.js',
   render: '../public/src/render.js',
   skins: '../public/src/skins.js',
@@ -58,6 +59,10 @@ const ZUGESAGT = {
     'createState', 'emptyState', 'cloneState', 'addCube', 'dropCube', 'isFree',
     'resolveMove', 'applyMove', 'revertMove', 'legalCells', 'mobility', 'hasAnyMove',
     'isSolved', 'createSession', 'tap', 'undo', 'restart', 'tickClock', 'toRunLog'
+  ],
+  figuren: [
+    'FIGUREN', 'FIGUR_STANDARD', 'figurVon', 'istFigur', 'massFuer',
+    'figurMaske', 'maskenZellen'
   ],
   levels: [
     'GEN_VERSION', 'generateLevel', 'generateFromCode', 'generateForLevelNo',
@@ -98,7 +103,7 @@ test('§4.1/§4.2: der reine Kern liefert die Exporte auch zur Laufzeit', async 
     assert.notEqual(levels[n], undefined, `levels.js: ${n} ist undefined`);
   }
   // Regel 0.2: der reine Kern bleibt frei von Browser- und Zufallsquellen.
-  for (const modul of ['game', 'levels']) {
+  for (const modul of ['game', 'figuren', 'levels']) {
     const text = quelltext(modul).replace(/^\s*(\/\/.*|\*.*)$/gm, '');
     for (const verboten of ['Math.random', 'Date.now', 'performance.now',
       'document.', 'window.', "from 'three'"]) {

@@ -287,18 +287,75 @@ try {
     return null;
   });
   let langWeg = false;
+  let langWarum = 'kein sichtbarer 2x1-Stein gefunden';
   if (ziel) {
     const vor = await page.evaluate(() => globalThis.__pfeilspiel.zustand());
+    // Die Kamera muss zur Ruhe gekommen sein: ein Tap waehrend des Daempfungsnachlaufs
+    // gilt als Wischen und wird absichtlich verworfen (SPEC §8.7).
+    await page.waitForTimeout(700);
     await page.mouse.click(ziel.x, ziel.y);
     await page.waitForFunction(() => globalThis.__pfeilspiel.beschaeftigt === false,
       null, { timeout: 15000 });
-    const nach = await page.evaluate((c) => ({
-      moves: globalThis.__pfeilspiel.zustand().moves,
-      leer: globalThis.__pfeilspiel.session.state.occ[c] === -1
-    }), ziel.anker);
+    const nach = await page.evaluate((z) => {
+      const P = globalThis.__pfeilspiel;
+      return {
+        moves: P.zustand().moves,
+        leer: P.session.state.occ[z.anker] === -1,
+        jetztDort: P.zelleAnPunkt(z.x, z.y)
+      };
+    }, ziel);
     langWeg = nach.leer && nach.moves === vor.moves + 1;
+    langWarum = `Anker ${ziel.anker}: Zuege ${vor.moves}->${nach.moves}, `
+      + `Zelle ${nach.leer ? 'leer' : 'noch belegt'}, Strahl trifft jetzt ${nach.jetztDort}`;
   }
-  pruefe(langWeg, 'Ein echter Klick auf einen 2x1-Stein entfernt ihn');
+  pruefe(langWeg, 'Ein echter Klick auf einen 2x1-Stein entfernt ihn — ' + langWarum);
+
+  // --- Figuren ------------------------------------------------------------
+  // Eine Figur ist eine Setzbeschraenkung, keine Regelaenderung: der Turm wird zur
+  // Silhouette, alles andere bleibt (SPEC §2.5).
+  const figurListe = await page.evaluate(() =>
+    Array.from(document.getElementById('ps-figure').options).map((o) => o.value));
+  pruefe(figurListe.length >= 6 && figurListe[0] === 'QUADER',
+    `Figurauswahl bietet ${figurListe.length} Formen, Quader zuerst`);
+
+  for (const figur of figurListe.filter((f) => f !== 'QUADER')) {
+    await page.evaluate((f) => {
+      const el = document.getElementById('ps-figure');
+      el.value = f;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }, figur);
+    await page.waitForFunction((f) => globalThis.__pfeilspiel.zustand().figur === f,
+      figur, { timeout: 60000 });
+    await page.waitForFunction(() => globalThis.__pfeilspiel.beschaeftigt === false,
+      null, { timeout: 30000 });
+
+    const z = await page.evaluate(() => {
+      const P = globalThis.__pfeilspiel;
+      return { s: P.zustand(), legal: P.legaleZellen().length, C: P.board.C };
+    });
+    pruefe(z.s.lebend > 40 && z.legal > 0,
+      `Figur ${figur} laedt (${z.s.lebend} Steine in ${z.s.groesse}, ${z.legal} Zuege)`);
+    // Eine Figur belegt nie den ganzen Kasten — sonst waere es der Quader.
+    pruefe(z.s.lebend < z.C,
+      `Figur ${figur} laesst Raum frei (${z.s.lebend} von ${z.C} Zellen)`);
+    // Bildschirmfoto ist Dokumentation, keine Pruefung: der Softwarerenderer braucht bei
+    // grossen Figuren gelegentlich laenger als das Standardzeitlimit. Ein Fehlschlag hier
+    // darf den Lauf nicht abbrechen — die Zusagen oben sind bereits geprueft.
+    await page.screenshot({ path: join(AUS, `figur-${figur.toLowerCase()}.png`), timeout: 60000 })
+      .catch((e) => console.log('      (kein Bild von ' + figur + ': ' + e.message.split('\n')[0] + ')'));
+  }
+
+  // Zurueck auf den Quader, damit die folgenden Pruefungen den Turm sehen.
+  await page.evaluate(() => {
+    const el = document.getElementById('ps-figure');
+    el.value = 'QUADER';
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForFunction(() => globalThis.__pfeilspiel.zustand().figur === 'QUADER',
+    null, { timeout: 60000 });
+  await page.waitForFunction(() => globalThis.__pfeilspiel.beschaeftigt === false,
+    null, { timeout: 30000 });
+  pruefe(true, 'Rueckwechsel auf den vollen Quader funktioniert');
 
   // --- Drehen um alle drei Achsen -----------------------------------------
   // OrbitControls klemmte den Polarwinkel hart: ueber den Scheitel kam man nie. Mit

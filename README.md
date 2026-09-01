@@ -37,6 +37,32 @@ konnte, das immer noch. Ein lösbares Level lässt sich also nicht durch eine un
 Reihenfolge verderben. Die Schwierigkeit liegt im **Finden**: einem Pfeil ist im dichten Turm
 nicht anzusehen, ob seine Bahn frei ist, und im massiven Turm zeigen Pfeile auch ins Innere.
 
+### Figuren
+
+Die Steine stehen nicht nur als voller Quader. In den Einstellungen lässt sich die Form
+umschalten:
+
+| Figur | Aufbau |
+|---|---|
+| **Turm** | der volle Quader — der Standard |
+| **Herz** | zwei Kreislappen und eine Spitze, in der Tiefe aufgebläht |
+| **Weinglas** | Rotationskörper aus Fuß, Stiel und Kelch; der Kelch oben hohl |
+| **Stufenpyramide** | Zikkurat aus fünf gleich hohen Stufen |
+| **Dreistern im Ring** | flaches Medaillon: Ring, Nabe, drei Zacken |
+| **Baum** | runde Krone auf einem dünnen, sichtbaren Stamm |
+
+Eine Figur ist **keine Regeländerung**, sondern eine Setzbeschränkung des Generators: das
+Brett bleibt der volle Quader, und die Zugregel sieht die Figur nie. Eine Zelle außerhalb der
+Figur ist einfach eine leere Zelle, durch die ein Stein hinausfliegt. Deshalb gilt die
+Lösbarkeitsgarantie unverändert weiter.
+
+Jede Figur bringt ein Mindestmaß mit — ein Herz in einem 3×4×3-Kasten wäre ein Klumpen aus
+neun Steinen. Eine zu kleine gewählte Größe wird darauf angehoben; eine zu große so weit
+gekürzt, dass der Turm unter 1200 Zellen bleibt.
+
+Der *Dreistern im Ring* ist eine eigene, freie Geometrie — ein fremdes Markenzeichen wird
+nicht ausgeliefert.
+
 ### Zielmodi
 
 * **Abbau** — alle Steine müssen heraus.
@@ -89,7 +115,7 @@ npm run serve        # http://localhost:8787
 ## Tests
 
 ```bash
-npm test             # 229 Node-Tests: Geometrie, Zugregel, zweizellige Steine,
+npm test             # 243 Node-Tests: Geometrie, Zugregel, zweizellige Steine,
                      # Generator und Lösbarkeitsgarantie, Sitzung, Zeigereingabe,
                      # Overlays, Skins samt Kontrastproben, Worker-Validierung und
                      # -Anfragebearbeitung, API-Klient, Einzeldatei-Frischeprüfung
@@ -152,6 +178,7 @@ tatsächlich zum Sieg führt, wird als `verified` markiert.
 ```
 public/index.html              Importmap, Canvas, HUD-Gerüst, CRT-Overlay
 public/src/game.js             Board, Zugregel, Zustand      (rein: kein DOM, kein three)
+public/src/figuren.js          Figurmasken: Herz, Weinglas, … (rein)
 public/src/levels.js           Generator, Verifikation, Replay (rein)
 public/src/render.js           Three.js-Schicht, Pfeilatlas, Animationen, Picking, Orbit
 public/src/skins.js            Skin-Tokens und ihre Anwendung
@@ -167,8 +194,8 @@ tests/                         Node-Tests und der Playwright-Lauf
 SPEC.md                        verbindliche technische Spezifikation
 ```
 
-`game.js` und `levels.js` referenzieren weder `three` noch `document`, `window`, `Date` oder
-`Math.random` — sie laufen unverändert in Node und im Worker. Es gibt genau **eine**
+`game.js`, `figuren.js` und `levels.js` referenzieren weder `three` noch `document`, `window`,
+`Date` oder `Math.random` — sie laufen unverändert in Node und im Worker. Es gibt genau **eine**
 Regelimplementierung: `resolveMove` in `game.js`. Spiel, Generator, Verifikation, Tests und
 Worker benutzen dieselbe Funktion; alles andere würde die Lösbarkeitsgarantie stillschweigend
 brechen.

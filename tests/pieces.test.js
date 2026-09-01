@@ -12,7 +12,7 @@ import {
   cellsOfCube, sizeOfCube, hasAnyMove,
   OUT, EMPTY, EXT_NONE, RULE_VERSION
 } from '../public/src/game.js';
-import { generateLevel, verifyLevel, levelSpecFor } from '../public/src/levels.js';
+import { GEN_VERSION, generateLevel, verifyLevel, levelSpecFor } from '../public/src/levels.js';
 
 const vol = (W, H, D) => buildBoard({ mode: 'VOLUMEN', W, H, D });
 const V = (b, x, y, z) => cellIndexOf(b, `V:${x}:${y}:${z}`);
@@ -68,7 +68,7 @@ test('createState uebergeht einen 2x1-Eintrag, dessen Ausleger aus dem Gitter fu
 test('verifyLevel lehnt eine doppelt belegte Zelle ab', () => {
   const b = vol(4, 3, 3);
   const doppelt = {
-    v: 1, ruleVersion: RULE_VERSION, genVersion: 3,
+    v: 1, ruleVersion: RULE_VERSION, genVersion: GEN_VERSION,
     seed: 1, attempt: 0, mode: 'VOLUMEN', goal: 'ABBAU',
     dims: { W: 4, H: 3, D: 3 }, levelCode: 'V-A-4x3x3-0-00000001',
     cubes: [

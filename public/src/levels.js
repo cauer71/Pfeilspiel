@@ -21,6 +21,10 @@ import {
   legalCells, mobility, isSolved
 } from './game.js';
 
+import {
+  FIGUR_STANDARD, figurMaske, figurVon, istFigur, massFuer, maskenZellen
+} from './figuren.js';
+
 /**
  * Generatorversion 3. Mit Regelversion 3 gibt es weder Schritt noch Sprung: ein Stein
  * verlaesst den Turm genau dann, wenn seine Bahn frei ist. Damit entfaellt die zweite
@@ -28,7 +32,7 @@ import {
  * von dem aus ihn ein Schritt oder eine Sprungkette wieder an seinen Platz brachte, und
  * beides gibt es nicht mehr. Der Rueckwaertsbau besteht jetzt nur noch aus unExit.
  */
-export const GEN_VERSION = 3;
+export const GEN_VERSION = 4;
 
 // --- Zufall (SPEC §11) --------------------------------------------------
 
@@ -155,16 +159,23 @@ function sternFaktoren(mode, goal, W, H, D) {
  * Vollstaendige LevelSpec aus den identitaetsstiftenden Feldern.
  * @returns {Object} LevelSpec (SPEC §3.6)
  */
-function specVon(mode, goal, W, H, D, seed, attempt) {
-  const p = kurvenParameter(mode, goal, W, H, D);
+function specVon(mode, goal, W, H, D, seed, attempt, figure) {
+  const fig = figurVon(figure);
+  // Die Figur bestimmt das Mindestmass mit: ein Weinglas in einem 3x4x3-Kasten waere
+  // ein Klumpen. Die Masse gehen so, wie sie hier stehen, in den Levelcode.
+  const m = massFuer(fig.id, W, H, D);
+  const p = kurvenParameter(mode, goal, m.W, m.H, m.D);
   return {
     seed: seed >>> 0,
     attempt: attempt | 0,
-    mode, goal, W, H, D,
-    density: p.density,
+    mode, goal, W: m.W, H: m.H, D: m.D,
+    figure: fig.id,
+    // Innerhalb einer Figur soll die Silhouette geschlossen wirken, deshalb ihre eigene,
+    // hoehere Zieldichte; der Quader behaelt die der Levelkurve.
+    density: fig.dichte === null ? p.density : fig.dichte,
     dominoRate: p.domino,
     weights: standardGewichte(),
-    bands: standardBaender(),
+    bands: fig.mobility === null ? standardBaender() : { mobility: fig.mobility.slice() },
     targetQuantile: p.q
   };
 }
@@ -175,7 +186,7 @@ function normSpec(spec) {
   const mode = 'VOLUMEN';
   const goal = spec.goal === 'BEFREIUNG' ? 'BEFREIUNG' : 'ABBAU';
   const W = spec.W | 0, H = spec.H | 0, D = spec.D | 0;
-  const basis = specVon(mode, goal, W, H, D, spec.seed >>> 0, spec.attempt | 0);
+  const basis = specVon(mode, goal, W, H, D, spec.seed >>> 0, spec.attempt | 0, spec.figure);
   if (Number.isFinite(spec.density)) basis.density = Math.min(1, Math.max(0, spec.density));
   if (Number.isFinite(spec.dominoRate)) basis.dominoRate = Math.min(1, Math.max(0, spec.dominoRate));
   if (Number.isFinite(spec.targetQuantile)) basis.targetQuantile = Math.min(1, Math.max(0, spec.targetQuantile));
@@ -201,18 +212,27 @@ export function levelSpecFor(n) {
   }
   if (stufe > 100) k = (stufe % 2 === 0) ? 10 : 11;
   const e = KURVE[k];
-  return specVon('VOLUMEN', e.goal, e.W, e.H, e.D, hash32(stufe), 0);
+  // Die Kurve laeuft auf dem vollen Quader: die Schwierigkeit soll an Groesse und
+  // Dichte haengen, nicht daran, welche Figur gerade an der Reihe ist. Figuren sind
+  // freies Spiel und werden in den Einstellungen gewaehlt (SPEC §2.5).
+  return specVon('VOLUMEN', e.goal, e.W, e.H, e.D, hash32(stufe), 0, FIGUR_STANDARD);
 }
 
 // --- Levelcode und URL-Hash (SPEC §4.2) ---------------------------------
 
-const CODE_RE = /^([FV])-([AB])-(\d{1,2})x(\d{1,2})x(\d{1,2})-(\d{1,2})-([0-9A-F]{8})$/;
+// Das Figursegment ist OPTIONAL: ein Code ohne Figur ist der volle Quader. So bleibt
+// jeder frueher vergebene Code gueltig und bezeichnet weiterhin genau dasselbe Level.
+const CODE_RE =
+  /^([FV])-([AB])-(?:([A-Z]{4,12})-)?(\d{1,2})x(\d{1,2})x(\d{1,2})-(\d{1,2})-([0-9A-F]{8})$/;
 
 export function encodeLevelCode(spec) {
   const m = 'V';
   const g = spec.goal === 'BEFREIUNG' ? 'B' : 'A';
+  const fig = figurVon(spec.figure).id;
+  const f = fig === FIGUR_STANDARD ? '' : fig + '-';
   const seed = (spec.seed >>> 0).toString(16).toUpperCase().padStart(8, '0');
-  return m + '-' + g + '-' + spec.W + 'x' + spec.H + 'x' + spec.D + '-' + (spec.attempt | 0) + '-' + seed;
+  return m + '-' + g + '-' + f + spec.W + 'x' + spec.H + 'x' + spec.D
+    + '-' + (spec.attempt | 0) + '-' + seed;
 }
 
 /** @returns {Object} LevelSpec; wirft bei Formatfehler. */
@@ -220,20 +240,29 @@ export function parseLevelCode(code) {
   if (typeof code !== 'string') throw new TypeError('Levelcode: Zeichenkette erwartet');
   const m = CODE_RE.exec(code);
   if (!m) throw new Error('Levelcode: Formatfehler: ' + code);
-  const attempt = parseInt(m[6], 10);
+  const attempt = parseInt(m[7], 10);
   if (attempt < 0 || attempt > 11) throw new Error('Levelcode: Versuchsindex ausserhalb 0..11');
   if (m[1] !== 'V') throw new Error('Levelcode: der Modus FASSADE ist entfallen: ' + code);
-  const W = parseInt(m[3], 10), H = parseInt(m[4], 10), D = parseInt(m[5], 10);
+  const figure = m[3] === undefined ? FIGUR_STANDARD : m[3];
+  if (!istFigur(figure)) throw new Error('Levelcode: unbekannte Figur: ' + code);
+  const W = parseInt(m[4], 10), H = parseInt(m[5], 10), D = parseInt(m[6], 10);
   const mode = 'VOLUMEN';
   const goal = m[2] === 'B' ? 'BEFREIUNG' : 'ABBAU';
   buildBoard({ mode, W, H, D });   // Masse pruefen, wirft RangeError
-  return specVon(mode, goal, W, H, D, parseInt(m[7], 16) >>> 0, attempt);
+  const spec = specVon(mode, goal, W, H, D, parseInt(m[8], 16) >>> 0, attempt, figure);
+  // Der Code muss die Masse EXAKT wiedergeben. Haette massFuer sie angehoben, bezeichnete
+  // derselbe Code zwei verschiedene Level — im Browser eines, im Worker ein anderes.
+  if (spec.W !== W || spec.H !== H || spec.D !== D)
+    throw new RangeError('Levelcode: Masse unter dem Mindestmass der Figur: ' + code);
+  return spec;
 }
 
 export function encodeHash(spec) {
+  const fig = figurVon(spec.figure).id;
   return '#s=' + (spec.seed >>> 0).toString(16)
     + '&m=' + spec.mode
     + '&g=' + spec.goal
+    + (fig === FIGUR_STANDARD ? '' : '&f=' + fig)
     + '&d=' + spec.W + 'x' + spec.H + 'x' + spec.D
     + '&a=' + (spec.attempt | 0)
     + '&r=' + RULE_VERSION
@@ -266,8 +295,13 @@ export function parseHash(hash) {
   const W = +dm[1], H = +dm[2], D = +dm[3];
   const attempt = +feld.a;
   if (attempt > 11) return null;
+  const figure = feld.f === undefined ? FIGUR_STANDARD : feld.f;
+  if (!istFigur(figure)) return null;
   try { buildBoard({ mode: feld.m, W, H, D }); } catch { return null; }
-  return specVon(feld.m, feld.g, W, H, D, parseInt(feld.s, 16) >>> 0, attempt);
+  const spec = specVon(feld.m, feld.g, W, H, D, parseInt(feld.s, 16) >>> 0, attempt, figure);
+  // Wie beim Levelcode: gehobene Masse wuerden aus einem Link ein anderes Level machen.
+  if (spec.W !== W || spec.H !== H || spec.D !== D) return null;
+  return spec;
 }
 
 // --- Kandidatentests: die einzige Stelle, an der ein Un-Zug akzeptiert wird ---
@@ -311,9 +345,14 @@ const MAX_KANDIDATEN = 200; // Abbruch der Suche (grosse Bretter)
 /** Ab dieser Zellzahl greift die Deckelung aus SPEC §6.6. */
 const VOLLSUCHE_BIS = 400;
 
-function freieZellen(board, state) {
+/**
+ * Freie Zellen, die die Figurmaske freigibt. `maske` darf fehlen (voller Quader).
+ * @param {Uint8Array} [maske]
+ */
+function freieZellen(board, state, maske) {
   const res = [];
-  for (let c = 0; c < board.C; c++) if (state.occ[c] === EMPTY) res.push(c);
+  for (let c = 0; c < board.C; c++)
+    if (state.occ[c] === EMPTY && (!maske || maske[c])) res.push(c);
   return res;
 }
 
@@ -332,13 +371,14 @@ function freieZellen(board, state) {
  * Moegliche Ausleger einer Zelle: nur zur groesseren Zellnummer hin, damit der Anker
  * eines 2x1-Steins eindeutig die kleinere Zelle ist.
  */
-function auslegerVon(board, state, cell) {
+function auslegerVon(board, state, cell, maske) {
   const res = [];
   for (let e = 0; e < 6; e++) {
     if (board.valid[cell * 6 + e] !== 1) continue;
     const z = board.step[cell * 6 + e];
     if (z === OUT || z <= cell) continue;
     if (state.occ[z] !== EMPTY) continue;
+    if (maske && !maske[z]) continue;      // ein 2x1-Stein ragt nie aus der Figur heraus
     res.push(e);
   }
   return res;
@@ -349,13 +389,14 @@ function auslegerVon(board, state, cell) {
  *        2x1-Steine aufgezaehlt. Die Form wird je Runde vorab gewaehlt (tryGenerate),
  *        damit die Kandidatensuche nicht um den Faktor der Auslegerzahl waechst.
  */
-function unExitCandidates(board, state, rng, spec, zweizellig = false) {
+function unExitCandidates(board, state, rng, spec, zweizellig = false, maske) {
   const cands = [];
-  const formen = (cell) => zweizellig ? auslegerVon(board, state, cell) : [EXT_NONE];
+  const formen = (cell) => zweizellig ? auslegerVon(board, state, cell, maske) : [EXT_NONE];
 
   if (board.C <= VOLLSUCHE_BIS) {
     for (let c = 0; c < board.C; c++) {
       if (state.occ[c] !== EMPTY) continue;
+      if (maske && !maske[c]) continue;
       const exts = formen(c);
       for (let e = 0; e < exts.length; e++) {
         for (let d = 0; d < 6; d++) {
@@ -367,7 +408,7 @@ function unExitCandidates(board, state, rng, spec, zweizellig = false) {
     }
     return cands;
   }
-  const frei = shuffle(freieZellen(board, state), rng);
+  const frei = shuffle(freieZellen(board, state, maske), rng);
   const n = Math.min(frei.length, MAX_ZELLEN);
   for (let k = 0; k < n && cands.length < MAX_KANDIDATEN; k++) {
     const cell = frei[k];
@@ -512,14 +553,15 @@ function austrittsfolge(board, state, q, rng) {
  * @param {Object} board @param {Object} state
  * @param {number[]} ref Zellindizes in Klickreihenfolge; wird vorne ergaenzt
  * @param {() => number} rng
- * @param {{limit?:number, info?:Array}} [opts]
+ * @param {{limit?:number, info?:Array, maske?:Uint8Array}} [opts]
  * @returns {{added:number, moves:number}}
  */
 export function fillByDepth(board, state, ref, rng, opts = {}) {
   const limit = Number.isFinite(opts.limit) ? opts.limit : Infinity;
   const info = Array.isArray(opts.info) ? opts.info : null;
+  const maske = opts.maske instanceof Uint8Array ? opts.maske : null;
 
-  const frei = shuffle(freieZellen(board, state), rng);
+  const frei = shuffle(freieZellen(board, state, maske), rng);
   const rang = new Int32Array(board.C).fill(-1);
   for (let k = 0; k < frei.length; k++) rang[frei[k]] = k;
   frei.sort((a, b) => (board.minDepthOf[b] - board.minDepthOf[a]) || (rang[a] - rang[b]));
@@ -551,7 +593,12 @@ function tryGenerate(board, spec, rng) {
   const state = emptyState(board, board.C, spec.goal);
   const ref = [];      // Zellindizes in Klickreihenfolge
   const info = [];     // parallel dazu: {cell, cubeId, kind}
-  const N = Math.min(MAX_CUBES, board.C, Math.round(spec.density * board.C));
+  // Die Figurmaske sagt, welche Zellen ueberhaupt einen Stein tragen duerfen. Sie
+  // beschraenkt AUSSCHLIESSLICH das Setzen; die Zugregel sieht sie nie, ein Stein
+  // fliegt also durch die leeren Zellen neben der Figur hinaus (SPEC §2.5).
+  const maske = figurMaske(board, spec.figure);
+  const platz = maskenZellen(maske);
+  const N = Math.min(MAX_CUBES, platz, Math.round(spec.density * platz));
   let guard = 60 * N + 60;
 
   // Belegte Zellen statt Steinzahl als Abbruchmass: ein 2x1-Stein fuellt zwei Zellen,
@@ -567,16 +614,16 @@ function tryGenerate(board, spec, rng) {
     // Form der Runde vorab waehlen; ein 2x1-Stein braucht zwei freie Zellen.
     const willZwei = (N - voll) >= 2 && rng() < (spec.dominoRate || 0);
 
-    let cands = unExitCandidates(board, state, rng, spec, willZwei);
+    let cands = unExitCandidates(board, state, rng, spec, willZwei, maske);
     if (cands.length === 0 && willZwei)
-      cands = unExitCandidates(board, state, rng, spec, false);
+      cands = unExitCandidates(board, state, rng, spec, false, maske);
     if (cands.length === 0) break;   // -> Fuellrueckfall
     applyUnMove(state, waehleBesten(board, state, cands, spec, rng), ref, info);
     voll = belegt();
   }
 
   if (voll < N)
-    fillByDepth(board, state, ref, rng, { limit: N, info });
+    fillByDepth(board, state, ref, rng, { limit: N, info, maske });
 
   return { state, ref, info };
 }
@@ -714,6 +761,7 @@ function toLevel(board, roh, spec) {
     attempt: spec.attempt | 0,
     mode: spec.mode,
     goal: spec.goal,
+    figure: spec.figure,
     dims: { W: board.W, H: board.H, D: board.D },
     levelCode: encodeLevelCode(spec),
     cubes,

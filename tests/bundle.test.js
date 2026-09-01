@@ -38,8 +38,9 @@ const WURZEL = fileURLToPath(new URL('../', import.meta.url));
 const WERKZEUG = join(WURZEL, 'tools', 'build-artifact.js');
 const QUELLVERZEICHNIS = join(WURZEL, 'public', 'src');
 
-/** Die sieben Spielmodule aus SPEC §3 — Reihenfolge egal, Vollstaendigkeit nicht. */
-const SPIELMODULE = ['game.js', 'levels.js', 'render.js', 'skins.js', 'ui.js', 'api.js', 'main.js'];
+/** Die acht Spielmodule aus SPEC §4 — Reihenfolge egal, Vollstaendigkeit nicht. */
+const SPIELMODULE = ['game.js', 'figuren.js', 'levels.js', 'render.js', 'skins.js',
+  'ui.js', 'api.js', 'main.js'];
 
 // --- Bau -------------------------------------------------------------------
 // Einmal je Testdatei, in ein frisches Verzeichnis. Kein Zugriff auf dist/:
@@ -157,7 +158,7 @@ test('die Einzeldatei laedt nichts nach: kein Skriptverweis, keine Importmap, ke
 
 // --- 4. Alle Spielmodule ---------------------------------------------------
 
-test('alle sieben Spielmodule sind eingesetzt — und kein weiteres blieb liegen', () => {
+test('alle acht Spielmodule sind eingesetzt — und kein weiteres blieb liegen', () => {
   const marken = [...ERZEUGNIS.matchAll(/^\/\/ ===== public\/src\/([A-Za-z0-9_.-]+) =====$/gm)]
     .map((m) => m[1]);
 

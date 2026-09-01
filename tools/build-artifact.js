@@ -26,7 +26,8 @@ const WURZEL = resolve(HIER, '..');
 const ZIEL = resolve(process.argv[2] || join(WURZEL, 'dist', 'pfeilspiel.html'));
 
 /** Reihenfolge nach Abhaengigkeiten: jedes Modul steht hinter dem, was es benutzt. */
-const MODULE = ['game.js', 'levels.js', 'render.js', 'skins.js', 'ui.js', 'api.js', 'main.js'];
+// Ladereihenfolge: figuren.js vor levels.js, denn levels.js benutzt die Maske.
+const MODULE = ['game.js', 'figuren.js', 'levels.js', 'render.js', 'skins.js', 'ui.js', 'api.js', 'main.js'];
 
 const lies = (p) => readFileSync(join(WURZEL, p), 'utf8');
 

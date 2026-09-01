@@ -21,8 +21,13 @@ const GOAL_MODES = ['abbau', 'befreiung'];
 const QUERY_KEYS = ['dir', 'goal', 'size', 'limit', 'offset', 'bestPerName'];
 const SIZE_RE = /^(\d{1,2})x(\d{1,2})x(\d{1,2})$/;
 const UINT_RE = /^\d{1,7}$/;
-const LEVELCODE_RE = /^[FV]-[AB]-\d+x\d+x\d+-\d{1,2}-[0-9A-F]{8}$/;
-const LEVELCODE_TEILE = /^([FV])-([AB])-(\d+)x(\d+)x(\d+)-(\d{1,2})-([0-9A-F]{8})$/;
+// Das Figursegment ist optional; fehlt es, meint der Code den vollen Quader. Welche
+// Figuren es gibt, weiss allein figuren.js — der Worker prueft hier nur die FORM. Ob die
+// Kennung existiert, entscheidet ohnehin das Nachspielen: generateFromCode wirft bei
+// einer unbekannten Figur, und der Lauf gilt dann als nicht verifiziert (SPEC §9.5).
+const LEVELCODE_RE = /^[FV]-[AB]-(?:[A-Z]{4,12}-)?\d+x\d+x\d+-\d{1,2}-[0-9A-F]{8}$/;
+const LEVELCODE_TEILE =
+  /^([FV])-([AB])-(?:([A-Z]{4,12})-)?(\d+)x(\d+)x(\d+)-(\d{1,2})-([0-9A-F]{8})$/;
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const APPVERSION_RE = /^[A-Za-z0-9._-]{1,16}$/;
 
@@ -216,8 +221,8 @@ export function validateSubmission(payload) {
   const lcDir = 'volumen';
   const lcGoal = lc[2] === 'B' ? 'befreiung' : 'abbau';
   if (lcDir !== payload.dirMode || lcGoal !== payload.goalMode
-    || parseInt(lc[3], 10) !== size.x || parseInt(lc[4], 10) !== size.y
-    || parseInt(lc[5], 10) !== size.z || parseInt(lc[6], 10) > 11)
+    || parseInt(lc[4], 10) !== size.x || parseInt(lc[5], 10) !== size.y
+    || parseInt(lc[6], 10) !== size.z || parseInt(lc[7], 10) > 11)
     return fehler('implausible', 'levelCode', 'levelCode passt nicht zu Modus und Turmmassen.');
 
   // --- Kennungen ---------------------------------------------------------

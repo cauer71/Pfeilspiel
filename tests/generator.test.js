@@ -308,14 +308,14 @@ test('6. parseLevelCode(encodeLevelCode(spec)) ist die Identitaet', () => {
   assert.equal(encodeLevelCode({ mode: 'VOLUMEN', goal: 'ABBAU', W: 4, H: 5, D: 4, attempt: 0, seed: 0x0008FA3C }),
     'V-A-4x5x4-0-0008FA3C');
   assert.equal(encodeHash({ mode: 'VOLUMEN', goal: 'ABBAU', W: 5, H: 7, D: 5, attempt: 0, seed: 0x8fa3c }),
-    '#s=8fa3c&m=VOLUMEN&g=ABBAU&d=5x7x5&a=0&r=3&gv=3');
+    '#s=8fa3c&m=VOLUMEN&g=ABBAU&d=5x7x5&a=0&r=3&gv=4');
 
   assert.throws(() => parseLevelCode('X-A-4x5x4-0-0008FA3C'), Error);
   assert.throws(() => parseLevelCode('V-A-4x5x4-12-0008FA3C'), Error);
   assert.throws(() => parseLevelCode('V-A-2x5x4-0-0008FA3C'), RangeError);
   // Codes der entfallenen Schalenvariante werden abgewiesen, nicht als VOLUMEN gedeutet.
   assert.throws(() => parseLevelCode('F-A-4x5x4-0-0008FA3C'), Error);
-  assert.equal(parseHash('#s=1&m=FASSADE&g=ABBAU&d=4x5x4&a=0&r=3&gv=3'), null);
+  assert.equal(parseHash('#s=1&m=FASSADE&g=ABBAU&d=4x5x4&a=0&r=3&gv=4'), null);
   assert.equal(parseHash('#s=1&m=VOLUMEN&g=ABBAU&d=4x5x4&a=0&r=99&gv=1'), null);
   assert.equal(parseHash('unsinn'), null);
 });
@@ -426,5 +426,5 @@ test('10. generateLevel liefert nur verifizierte Level aus', () => {
 test('10b. OUT und EMPTY bleiben die vereinbarten Sentinelwerte', () => {
   assert.equal(OUT, -1);
   assert.equal(EMPTY, -1);
-  assert.equal(GEN_VERSION, 3);
+  assert.equal(GEN_VERSION, 4);
 });

@@ -16,6 +16,9 @@ Generatorversion `GEN_VERSION = 3`.
 4. **Groessere Tuerme.** Die Kurve waechst bis 8×16×8 (§6.11), und im freien Spiel ist die
    Turmgroesse aus einer Liste bis 8×8-Grundflaeche waehlbar. `MAX_CUBES = 1200` bleibt der
    harte Deckel.
+5. **Figuren.** Die Steine stehen nicht mehr nur als voller Quader, sondern auf Wunsch als
+   Silhouette: Herz, Weinglas, Stufenpyramide, Dreistern im Ring, Baum (§2.5). Das ist eine
+   Setzbeschraenkung des Generators, KEINE Regelaenderung — die Zugregel sieht die Figur nie.
 
 Zur zweiten Aenderung, weil sie zwei fruehere Fassungen zuruecknimmt: v1 hatte die
 Halma-Sprungkette, v2 zusaetzlich das Rutschen bei freier Bahn. Beide liessen einen sichtbar
@@ -254,6 +257,89 @@ darf keine falsche Obergrenze erfinden.
 4. `depth` ist 1-Lipschitz auf dem Zellgraphen und faellt entlang der Richtung `d*` mit
    `depth(i,d*) === minDepth(i)` um genau 1 pro Schritt (Grundlage des Fuellsatzes §6.5).
 
+
+### 2.5 Figuren
+
+Das Brett bleibt immer der volle Quader. Eine **Figur** sagt lediglich, welche seiner Zellen
+ueberhaupt einen Stein tragen duerfen — eine `Uint8Array`-Maske der Laenge `C`, deterministisch
+aus `(Figur, W, H, D)` gerechnet (`figurMaske`, §4.2b).
+
+**Die Zugregel sieht die Maske nie.** `resolveMove` kennt nur `board.step` und `state.occ`; eine
+Zelle ausserhalb der Figur ist schlicht eine leere Zelle, durch die ein Stein hinausfliegt. Genau
+deshalb kostet die Figur weder eine Fallunterscheidung in der Regel noch eine neue
+Regelversion — sie beschraenkt allein das SETZEN im Generator (§6.6, §6.5) und damit auch die
+Lage zweizelliger Steine: ein 2x1-Stein liegt mit BEIDEN Zellen in der Figur.
+
+Die Loesbarkeitsgarantie bleibt unberuehrt: der Rueckwaertsbau setzt einen Stein nur dort, wo
+`resolveMove` im damaligen Zustand `EXIT` liefert, und `verifyLevel` spielt das Ergebnis vorwaerts
+nach (§6.8). Eine Maske aendert daran nichts, sie verkleinert nur die Kandidatenmenge.
+
+#### 2.5.1 Normierte Koordinaten
+
+Jede Figur ist ein Praedikat ueber
+
+```
+u = ((x + 0.5) / W) * 2 - 1     // links/rechts, (-1, 1)
+v =  (y + 0.5) / H              // unten/oben,   ( 0, 1)
+w = ((z + 0.5) / D) * 2 - 1     // vorn/hinten,  (-1, 1)
+```
+
+Damit skaliert jede Figur mit dem Kasten, statt an eine feste Zellzahl gebunden zu sein.
+
+#### 2.5.2 Mindestmasse und Deckel
+
+Jede Figur nennt ihr `min`: die kleinste Kantenlaenge, bei der sie noch als sie selbst zu
+erkennen ist. `massFuer(figur, W, H, D)` hebt einen zu kleinen Wunsch darauf an — ein Herz in
+einem 3×4×3-Kasten waere ein Klumpen aus neun Steinen — und kuerzt anschliessend, falls
+`W·H·D > MAX_CUBES`, immer die Dimension mit dem groessten Vorsprung vor ihrem eigenen
+Mindestmass. Ohne diese zweite Schranke wirft `buildBoard`, sobald jemand eine grosse Groesse mit
+einer breiten Figur kombiniert.
+
+Der **Levelcode traegt die angehobenen Masse**, nicht den Wunsch, und `parseLevelCode` weist
+einen Code unter dem Mindestmass mit `RangeError` ab. Andernfalls bezeichnete derselbe Code zwei
+verschiedene Level — der Browser hoebe an, der Worker regenerierte etwas anderes, und ein
+ehrlicher Lauf fiele als unverifiziert durch.
+
+#### 2.5.3 Die Figuren
+
+| Kennung | Name | Mindestmass | Aufbau |
+|---|---|---|---|
+| `QUADER` | Turm (voller Quader) | 3×2×3 | alles; der Standard |
+| `HERZ` | Herz | 9×9×5 | zwei Kreislappen plus Dreieckspitze, in z aufgeblaeht |
+| `WEINGLAS` | Weinglas | 7×12×7 | Rotationskoerper: Fuss, Stiel, Kelch; der Kelch oben hohl |
+| `PYRAMIDE` | Stufenpyramide | 9×10×9 | Zikkurat aus fuenf gleich hohen Stufen |
+| `DREISTERN` | Dreistern im Ring | 11×11×3 | flaches Medaillon: Ring, Nabe, drei Zacken |
+| `BAUM` | Baum | 9×13×9 | duenner Stamm plus runde Krone |
+
+Die klassische Herzkurve `(x²+y²−1)³ − x²y³ ≤ 0` ist bewusst **nicht** benutzt: ihre Einkerbung
+ist so flach, dass sie im Raster erst ab etwa 20 Zellen Breite sichtbar wird. Aus zwei Kreisen
+und einem Dreieck gebaut, steht die Kerbe schon bei neun Zellen.
+
+Die Krone des `BAUM` ist rund und sitzt auf einem sichtbar duennen Stamm. Ein KEGEL waere auch
+ein Baum, saehe aber aus dem Standardblickwinkel der Stufenpyramide zum Verwechseln aehnlich —
+zwei Figuren, die sich gleichen, sind eine Figur zu wenig.
+
+`DREISTERN` ist eine eigene, freie Geometrie. Ein erkennbar fremdes Markenzeichen wird nicht
+ausgeliefert.
+
+#### 2.5.4 Dichte und Baender je Figur
+
+Eine Figur traegt ihre eigene Zieldichte (0.97–0.98 statt der Kurvendichte): die Silhouette soll
+geschlossen wirken. Und sie traegt ihr eigenes **Beweglichkeitsband**. Das Turmband
+`mobility ∈ [0.10, 0.60]` haelt Level fern, in denen ohnehin fast alles sofort geht; eine duenne
+Figur ist aber von Natur aus beweglich — das Weinglas hat einen ein Feld dicken Stiel, da kann
+fast jeder Stein sofort heraus. Mit dem Turmband fiel jeder Versuch durch und der Generator lief
+zwoelfmal umsonst (gemessen 167 ms statt 22 ms).
+
+#### 2.5.5 Was Figuren NICHT tun
+
+* Sie aendern `RULE_VERSION` nicht.
+* Sie erscheinen nicht in der **Levelkurve** (§6.11): die Schwierigkeit der Kampagne soll an
+  Groesse und Dichte haengen, nicht daran, welche Figur gerade an der Reihe ist. Figuren sind
+  freies Spiel und werden in den Einstellungen gewaehlt.
+* Sie beruehren die Renderschicht nicht: gezeichnet wird, was besetzt ist.
+
+
 ---
 
 ## 3. Datenmodell
@@ -363,6 +449,7 @@ sieht aus wie ein verschluckter Tipp, nicht wie ein blockierter Zug.
  * @property {number} attempt              akzeptierter Versuchsindex 0..11 (siehe §6.7)
  * @property {'VOLUMEN'} mode
  * @property {'ABBAU'|'BEFREIUNG'} goal
+ * @property {string} figure               Figurkennung, Standard 'QUADER' (§2.5)
  * @property {{W:number,H:number,D:number}} dims
  * @property {string} levelCode            z.B. "F-A-4x5x4-1-0008FA3C"
  * @property {Array<{cell:number, dir:number, target:boolean}>} cubes
@@ -388,6 +475,7 @@ und macht Referenzloesung und Replay formatgleich.
  * @typedef {Object} LevelSpec
  * @property {number} seed @property {number} attempt
  * @property {'VOLUMEN'} mode @property {'ABBAU'|'BEFREIUNG'} goal
+ * @property {string} figure         Figurkennung, Standard 'QUADER' (§2.5)
  * @property {number} W @property {number} H @property {number} D
  * @property {number} density        Zieldichte 0..1
  * @property {number} dominoRate     Anteil der Runden, in denen ein 2x1-Stein statt eines
@@ -563,6 +651,8 @@ export function levelSpecFor(n: number): LevelSpec;
 export function encodeLevelCode(spec: LevelSpec): string;
 //   `${M}-${G}-${W}x${H}x${D}-${attempt}-${seed.toString(16).toUpperCase().padStart(8,'0')}`
 //   M ist stets V, G in {A,B}. Beispiel: "V-A-4x5x4-0-0008FA3C"
+//   Vor den Massen steht optional die Figurkennung: "V-A-HERZ-9x9x5-0-0008FA3C".
+//   Fehlt sie, meint der Code den vollen Quader — alte Codes bleiben damit gueltig.
 //   parseLevelCode wirft bei jedem anderen M — die Variante FASSADE ist entfallen (§1.4)
 export function parseLevelCode(code: string): LevelSpec;           // wirft bei Formatfehler
 export function encodeHash(spec: LevelSpec): string;
@@ -575,6 +665,24 @@ export function measureLevel(board: Board, level: Level, runs?: number): Level['
 //   runs Standard 200. MUSS in main.js in einem Zeitbudget bzw. requestIdleCallback
 //   laufen, niemals synchron im Levelstart-Pfad blockierend (§8.7).
 ```
+
+### 4.2b `src/figuren.js` — Figurmasken (rein)
+
+```js
+export const FIGUREN: ReadonlyArray<{
+  id: string, name: string, min: {W,H,D}, dichte: number|null,
+  mobility: [number,number]|null, drin: (u,v,w) => boolean }>;
+export const FIGUR_STANDARD: 'QUADER';
+export function figurVon(id?: string): Figur;          // wirft bei unbekannter Kennung
+export function istFigur(id: string): boolean;         // wirft nie
+export function massFuer(id, W, H, D): {W,H,D};        // Mindestmass hoch, MAX_CUBES runter
+export function figurMaske(board, id): Uint8Array;     // [C], 1 = darf einen Stein tragen
+export function maskenZellen(maske): number;
+```
+
+Rein wie `game.js` und `levels.js`: kein DOM, kein `three`, kein `Math.random`, kein `Date`.
+Laeuft unveraendert in Node und im Worker, sonst liesse sich ein eingereichter Lauf nicht
+nachpruefen. `levels.js` importiert dieses Modul, nicht umgekehrt.
 
 ### 4.3 `src/render.js` — Three.js-Schicht
 
@@ -1013,8 +1121,11 @@ function tryGenerate(board, spec, rng) {
   const state = emptyState(board, board.C, spec.goal);
   const ref = [];      // Zellindizes in Klickreihenfolge
   const info = [];     // parallel dazu: {cell, cubeId, kind}
+  // Die Figurmaske beschraenkt AUSSCHLIESSLICH das Setzen (§2.5); die Zugregel sieht sie nie.
+  const maske = figurMaske(board, spec.figure);
+  const platz = maskenZellen(maske);
   // N zaehlt belegte ZELLEN, nicht Steine: ein 2x1-Stein fuellt zwei (§6.11).
-  const N = Math.min(MAX_CUBES, board.C, Math.round(spec.density * board.C));
+  const N = Math.min(MAX_CUBES, platz, Math.round(spec.density * platz));
   let guard = 60 * N + 60;
 
   let voll = belegteZellen(state);
@@ -1151,6 +1262,9 @@ Zweitens die Zugzahl: unter RULE_VERSION 3 ist sie genau die Steinzahl, also `de
 (§5) — in der Hoehe **linear**, in der Grundflaeche **quadratisch**. Deshalb waechst `H` von 4
 auf 16, `W` und `D` nur von 3 auf 8. Der grosse Turm hat 1024 Zellen und bei Dichte 0.85 rund
 870 belegte Zellen; harter Deckel bleibt `MAX_CUBES = 1200`.
+
+**Figuren.** Die Kurve laeuft ausschliesslich auf dem vollen Quader (§2.5.5). Figuren werden
+in den Einstellungen gewaehlt und sind freies Spiel.
 
 **Freie Turmgroesse.** Im freien Spiel ist die Groesse waehlbar, unabhaengig von der Kurve.
 `GROESSEN` (aus `levels.js`, in der Oberflaeche als Auswahlliste) nennt die zulaessigen
@@ -2408,7 +2522,7 @@ netzunabhaengige HTML-Datei (`dist/pfeilspiel.html`), erzeugt ueber
   unveraendert; `three` als gekapselte CommonJS-Fassung (`node_modules/three/build/three.cjs`,
   ohne jedes `require`) hinter einer Funktion, die das Objekt `THREE` liefert; `TrackballControls`
   und `RoomEnvironment` von ES-Modul auf denselben Geltungsbereich umgeschrieben
-  (`import` → Destrukturierung aus `THREE`); die sieben Spielmodule in
+  (`import` → Destrukturierung aus `THREE`); die acht Spielmodule in
   Abhaengigkeitsreihenfolge verkettet, ihre gegenseitigen Importe entfallen.
 * Die Einzeldatei laedt **nichts** nach: keine Importmap, kein `<script src>`, kein
   Stylesheet-Verweis, kein `vendor/`-Pfad, kein CDN. Sie MUSS vollstaendig offline laufen.
@@ -2718,7 +2832,7 @@ Erzeugnis aus §9.8 und der Testlauf selbst.
    `three` steckt eingebettet (`THREE`-Kapsel, `TrackballControls`, `RoomEnvironment`, kein
    `require`); es wird nichts nachgeladen (kein Skriptverweis, keine Importmap, kein
    `vendor/`-Pfad).
-3. Alle sieben Spielmodule sind eingesetzt, die Modulmenge deckt sich **exakt** mit
+3. Alle acht Spielmodule sind eingesetzt, die Modulmenge deckt sich **exakt** mit
    `public/src/*.js`, `main.js` steht am Ende, und die oertliche Bestenliste steht zwischen
    `api.js` und `main.js`, wo sie ueberhaupt wirken kann.
 4. **Zeilenweise Frischepruefung** ueber alle zehn Dateien unter `public/src/` (sieben Module,
@@ -2767,7 +2881,28 @@ Deckt die zweizelligen Steine unter `RULE_VERSION = 3` ab. Pflichtgegenstaende:
 7. `?debug=arrows`: Turm mit allen sechs Richtungen; visuelle Referenz fuer die
    UV-Drehrichtung (§8.5).
 
-### 10.13 Abnahmekriterien
+### 10.14 `tests/figuren.test.js` — Figuren
+
+1. **Wohlgeformtheit** — jede Kennung passt in den Levelcode (`/^[A-Z]{4,12}$/`), ist eindeutig,
+   und ihr Mindestmass liegt innerhalb der Brettgrenzen und unter `MAX_CUBES`.
+2. **Echte Teilmenge** — der Quader gibt alle `C` Zellen frei; jede Figur gibt mindestens 60 und
+   hoechstens 85 % frei. Alles darueber waere ein Quader unter falschem Namen.
+3. **Determinismus** — dieselbe Maske aus denselben `(Figur, W, H, D)`.
+4. **`massFuer`** — haelt Mindestmass und `MAX_CUBES` gleichzeitig ein.
+5. **Kein Stein ausserhalb der Figur**, ueber beide Zielmodi und mehrere Seeds; und die Maske ist
+   zu mindestens 90 % belegt, sonst ist die Silhouette nicht zu erkennen. Das ist die
+   eigentliche Zusage: faellt sie, schweben Steine im leeren Raum.
+6. **2x1-Steine** liegen mit BEIDEN Zellen in der Figur.
+7. **Verifikation und Rundlauf** — jedes Figurlevel ist verifiziert, sein Levelcode traegt die
+   Figur und ergibt dieselbe Spec zurueck; ebenso der URL-Hash.
+8. **Alte Codes** — ein Code ohne Figursegment ist der volle Quader.
+9. **Mindestmass im Code** — ein Code unter dem Mindestmass der Figur wird abgewiesen (§2.5.2).
+10. **Die Levelkurve bleibt beim Quader**, fuer `n` in [1, 120].
+11. **Die Worker-Kette** — Levelcode → `generateFromCode` → `replayTaps`: fuer jede Figur
+    kommt der Zeugenlauf durch `validateSubmission` und gewinnt beim Nachspielen mit
+    `invalid === 0`. Bricht sie, gilt jeder ehrliche Figurlauf als unverifiziert.
+
+### 10.15 Abnahmekriterien
 
 Ein Release ist abnahmefaehig, wenn:
 

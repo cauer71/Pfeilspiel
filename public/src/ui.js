@@ -42,6 +42,7 @@ export const TEXTE = {
   skinModern: 'Modern',
   skinApple: 'Apple',
   skinArcade: 'Arcade',
+  labelFigure: 'Figur',
   labelSize: 'Turmgroesse',
   labelGoal: 'Zielmodus',
   goalAbbau: 'Abbau',
@@ -188,7 +189,7 @@ const FOKUS_SELEKTOR = 'button:not([disabled]), [href], input:not([disabled]), '
  *
  * @param {{
  *   onNew?: function, onUndo?: function, onRestart?: function,
- *   onSkin?: function, onSize?: function, onGoal?: function, onLevel?: function,
+ *   onSkin?: function, onFigure?: function, onSize?: function, onGoal?: function, onLevel?: function,
  *   onSubmitScore?: function, onShowBoard?: function,
  *   onXray?: function, onSpeed?: function, onMute?: function
  * }} [handlers]
@@ -214,6 +215,7 @@ export function createUI(handlers) {
     settings: id('ps-settings'),
     skin: id('ps-skin'),
     skinChip: id('ps-skin-chip'),
+    figure: id('ps-figure'),
     size: id('ps-size'),
     goal: id('ps-goal'),
     level: id('ps-level'),
@@ -437,6 +439,7 @@ export function createUI(handlers) {
     setSkinChip(E.skin.value);
     rufe('onSkin', E.skin.value);
   });
+  on(E.figure, 'change', () => rufe('onFigure', E.figure.value));
   on(E.size, 'change', () => rufe('onSize', E.size.value));
   on(E.goal, 'change', () => rufe('onGoal', E.goal.value));
 
@@ -620,7 +623,8 @@ export function createUI(handlers) {
   function setControls(werte) {
     const v = werte || {};
     if (E.skin && typeof v.skin === 'string') setSkinChip(v.skin);
-    if (E.size && typeof v.size === 'string') E.size.value = v.size;
+    if (E.figure && typeof v.figure === 'string') E.figure.value = v.figure;
+    if (typeof v.size === 'string') setzeGroesse(v.size);
     if (E.goal && typeof v.goal === 'string') E.goal.value = v.goal;
     if (E.level && Number.isFinite(v.level)) E.level.value = String(Math.trunc(v.level));
     if (E.speed && Number.isFinite(v.speed)) E.speed.value = String(v.speed);
@@ -640,18 +644,61 @@ export function createUI(handlers) {
    * @param {Array<{W:number,H:number,D:number}>} groessen
    * @param {string} [aktiv] Schluessel "WxHxD" der vorausgewaehlten Groesse
    */
+  /** Grundflaeche x Hoehe, so wie ein Spieler den Turm beschreibt. */
+  function groessenText(W, H, D) {
+    return W + '×' + D + ' Grundflaeche, ' + H + ' hoch';
+  }
+
   function setSizes(groessen, aktiv) {
     if (!E.size || !Array.isArray(groessen)) return;
     E.size.textContent = '';
     for (const g of groessen) {
-      const wert = g.W + 'x' + g.H + 'x' + g.D;
       const opt = doc.createElement('option');
-      opt.value = wert;
-      // Grundflaeche x Hoehe, so wie ein Spieler den Turm beschreibt.
-      opt.textContent = g.W + '×' + g.D + ' Grundflaeche, ' + g.H + ' hoch';
+      opt.value = g.W + 'x' + g.H + 'x' + g.D;
+      opt.textContent = groessenText(g.W, g.H, g.D);
       E.size.appendChild(opt);
     }
-    if (aktiv) E.size.value = String(aktiv);
+    if (aktiv) setzeGroesse(aktiv);
+  }
+
+  /**
+   * Setzt die Groessenauswahl — und traegt den Wert nach, wenn er nicht in der Liste
+   * steht. Eine Figur hebt zu kleine Masse auf ihr Mindestmass an (SPEC §2.5.2), das
+   * Ergebnis ist dann oft keine der angebotenen Groessen. Ohne diesen Nachtrag bliebe
+   * das Feld einfach leer und der Spieler saehe nicht, wie gross sein Turm ist.
+   */
+  function setzeGroesse(wert) {
+    if (!E.size) return;
+    const text = String(wert);
+    let da = false;
+    for (const o of E.size.options) if (o.value === text) { da = true; break; }
+    if (!da) {
+      const teile = text.split('x').map((t) => parseInt(t, 10));
+      if (teile.length !== 3 || teile.some((n) => !Number.isFinite(n))) return;
+      const opt = doc.createElement('option');
+      opt.value = text;
+      opt.textContent = groessenText(teile[0], teile[1], teile[2]);
+      E.size.appendChild(opt);
+    }
+    E.size.value = text;
+  }
+
+  /**
+   * Fuellt die Figurauswahl. Die Namen kommen aus figuren.js, damit es genau eine
+   * Liste gibt: eine zweite hier im HUD wuerde beim naechsten Zuwachs veralten.
+   * @param {Array<{id:string, name:string, min:{W:number,H:number,D:number}}>} figuren
+   * @param {string} [aktiv]
+   */
+  function setFigures(figuren, aktiv) {
+    if (!E.figure || !Array.isArray(figuren)) return;
+    E.figure.textContent = '';
+    for (const f of figuren) {
+      const opt = doc.createElement('option');
+      opt.value = f.id;
+      opt.textContent = f.name;
+      E.figure.appendChild(opt);
+    }
+    if (aktiv) E.figure.value = String(aktiv);
   }
 
   // Startwerte des Geruests
@@ -672,6 +719,7 @@ export function createUI(handlers) {
     setBusy,
     setSkinChip,
     setSizes,
+    setFigures,
     setControls
   };
 }

@@ -10,8 +10,9 @@ import {
   resolveMove, hasAnyMove, legalCells
 } from './game.js';
 import {
-  levelSpecFor, generateLevel, parseHash, encodeHash, measureLevel, GROESSEN
+  levelSpecFor, generateLevel, parseHash, encodeHash, parseLevelCode, measureLevel, GROESSEN
 } from './levels.js';
+import { FIGUREN, istFigur } from './figuren.js';
 import {
   createRenderer, createScene, createCamera, createControls, fitCamera,
   updateKeyLight, attachResize, startLoop, createTowerView, createAnimRunner,
@@ -76,8 +77,8 @@ function neuerSeed() {
  * koennte der Worker das Level aus dem Code nicht mehr bitgleich regenerieren
  * (§9.4). levels.js ergaenzt die Kurvenparameter selbst.
  */
-function basisSpec(mode, goal, W, H, D, seed) {
-  return { mode, goal, W, H, D, seed: seed >>> 0, attempt: 0 };
+function basisSpec(mode, goal, W, H, D, seed, figure) {
+  return { mode, goal, W, H, D, seed: seed >>> 0, attempt: 0, figure };
 }
 
 function naechstesBild() {
@@ -131,9 +132,16 @@ export async function boot() {
     return b;
   }
 
-  let board = boardFuer(spec);
+  // Wie in ladeLevel: erst das Level, dann das Brett DARAUS, und die Spec aus dem
+  // Levelcode. Der Wunsch kann kleiner sein als das Mindestmass einer Figur (§2.5.2).
   let level = generateLevel(spec);
+  spec = parseLevelCode(level.levelCode);
+  let board = boardFuer(spec);
   let session = createSession(board, level);
+
+  // Die zuletzt vom Spieler GEWUENSCHTE Groesse. Sie kann kleiner sein als die
+  // tatsaechliche, wenn eine Figur ihr Mindestmass durchsetzt (§2.5.2).
+  let groesseWunsch = { W: spec.W, H: spec.H, D: spec.D };
 
   // 3. Renderer, Szene, Kamera, Controls, Framing (§4.7.3).
   const renderer = createRenderer(canvas);
@@ -190,6 +198,7 @@ export async function boot() {
     onUndo: () => zuruecknehmen(),
     onRestart: () => neustart(),
     onSkin: (id) => skinWechseln(id),
+    onFigure: (f) => figurWechseln(f),
     onSize: (g) => groesseWechseln(g),
     onGoal: (g) => zielWechseln(g),
     onLevel: (n) => levelWaehlen(n),
@@ -211,9 +220,10 @@ export async function boot() {
   });
 
   ui.setSizes(GROESSEN, spec.W + 'x' + spec.H + 'x' + spec.D);
+  ui.setFigures(FIGUREN, spec.figure);
   ui.setControls({
-    skin: skinId, size: spec.W + 'x' + spec.H + 'x' + spec.D, goal: spec.goal, level: levelNo,
-    speed: tempo, xray: roentgen, muted: stumm
+    skin: skinId, figure: spec.figure, size: spec.W + 'x' + spec.H + 'x' + spec.D,
+    goal: spec.goal, level: levelNo, speed: tempo, xray: roentgen, muted: stumm
   });
 
   const input = createPointerInput({
@@ -392,10 +402,15 @@ export async function boot() {
     view.setHovered(null);
     await naechstesBild();      // Ladeanzeige sichtbar machen, dann erst rechnen
 
-    let neuesBoard, neuesLevel;
+    let neuesBoard, neuesLevel, neueKanon;
     try {
-      neuesBoard = boardFuer(neueSpec);
+      // Erst das Level, dann das Brett DARAUS. Die uebergebene Spec ist nur ein Wunsch:
+      // eine Figur hebt zu kleine Masse auf ihr Mindestmass an (SPEC §2.5.2). Wer hier
+      // das Brett aus dem Wunsch baute, bekaeme ein Brett und ein Level verschiedener
+      // Groesse — und damit Steine, deren Zellindex auf dem Brett gar nicht existiert.
       neuesLevel = generateLevel(neueSpec);
+      neueKanon = parseLevelCode(neuesLevel.levelCode);
+      neuesBoard = boardFuer(neueKanon);
     } catch (fehler) {
       console.error('[Pfeilspiel] Levelerzeugung', fehler);
       ui.setBusy(false);
@@ -404,7 +419,9 @@ export async function boot() {
       return;
     }
 
-    spec = neueSpec;
+    // Massgeblich ist, was der Levelcode sagt — sonst zeigt das HUD den Wunsch und der
+    // geteilte Link ein anderes Level.
+    spec = neueKanon;
     level = neuesLevel;
 
     if (neuesBoard !== board) {
@@ -428,7 +445,10 @@ export async function boot() {
     ui.setUndos(0);
     ui.setTimer(0);
     ui.setPar(level.par);
-    ui.setControls({ size: spec.W + 'x' + spec.H + 'x' + spec.D, goal: spec.goal, level: levelNo });
+    ui.setControls({
+      figure: spec.figure, size: spec.W + 'x' + spec.H + 'x' + spec.D,
+      goal: spec.goal, level: levelNo
+    });
     hashSchreiben();
     ui.setBusy(false);
     laedt = false;
@@ -463,14 +483,28 @@ export async function boot() {
   function groesseWechseln(text) {
     const teile = String(text || '').split('x').map((t) => parseInt(t, 10));
     if (teile.length !== 3 || teile.some((n) => !Number.isFinite(n))) return;
+    groesseWunsch = { W: teile[0], H: teile[1], D: teile[2] };
     aufKurve = false;
-    ladeLevel(basisSpec('VOLUMEN', spec.goal, teile[0], teile[1], teile[2], neuerSeed()),
+    ladeLevel(basisSpec('VOLUMEN', spec.goal, teile[0], teile[1], teile[2], neuerSeed(), spec.figure),
+      TEXTE.meldungNeuesLevel);
+  }
+
+  function figurWechseln(id) {
+    if (!istFigur(id)) return;
+    aufKurve = false;
+    // GEWUENSCHTE Groesse, nicht die aktuelle: eine Figur hebt zu kleine Masse auf ihr
+    // Mindestmass an (§2.5.2), und wer danach weiterschaltet, uebernaehme diese
+    // Anhebung. Der Kasten wuechse mit jedem Figurwechsel monoton weiter, bis er an
+    // MAX_CUBES stiesse — obwohl der Spieler seine Groesse nie geaendert hat.
+    ladeLevel(basisSpec('VOLUMEN', spec.goal,
+      groesseWunsch.W, groesseWunsch.H, groesseWunsch.D, neuerSeed(), id),
       TEXTE.meldungNeuesLevel);
   }
 
   function zielWechseln(goal) {
     aufKurve = false;
-    ladeLevel(basisSpec('VOLUMEN', goal || spec.goal, spec.W, spec.H, spec.D, neuerSeed()),
+    ladeLevel(basisSpec('VOLUMEN', goal || spec.goal,
+      groesseWunsch.W, groesseWunsch.H, groesseWunsch.D, neuerSeed(), spec.figure),
       TEXTE.meldungNeuesLevel);
   }
 
@@ -617,6 +651,7 @@ export async function boot() {
       par: level.par,
       modus: spec.mode,
       ziel: spec.goal,
+      figur: spec.figure,
       groesse: spec.W + 'x' + spec.H + 'x' + spec.D,
     }),
   };
